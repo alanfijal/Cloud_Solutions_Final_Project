@@ -1,7 +1,7 @@
 # Cold-Chain Monitor
 
 Small AWS temperature-monitoring demo for the ESADE Cloud Solutions project.
-**Local implementation is tested; AWS deployment still requires owner approval.**
+**Dev is deployed in Stockholm. The bounded AWS rehearsal and GitHub checks passed.**
 
 ```text
 Simulator → HTTP API → ingest Lambda → EventBridge → SQS → detector → DynamoDB
@@ -45,12 +45,38 @@ mocked providers and create no AWS resources. Local evidence: **44 Python tests*
 two Terraform tests, all four root validations, actionlint, runtime dependency
 audit and Trivy's HIGH/CRITICAL gate passed. Two narrow CMK-related scan exceptions
 are recorded in `.trivyignore.yaml`. Independent package builds matched, including
-in a fresh hash-locked environment. GitHub CI and AWS end-to-end tests have not run.
+in a fresh hash-locked environment. [GitHub CI](https://github.com/alanfijal/Cloud_Solutions_Final_Project/actions/runs/44142650120)
+and [delivery preparation](https://github.com/alanfijal/Cloud_Solutions_Final_Project/actions/runs/44142940523)
+passed; the Linux-built artifact matches all seven live Lambda code hashes.
+
+AWS rehearsal, 17 November 2026: 100 distinct readings plus one duplicate replay;
+normal/spike/reset, sustained breach, escalation, late POST acknowledgement and
+recovery passed. Invalid input/authentication and expired acknowledgement were
+rejected; GET did not acknowledge. The owner confirmed both staff and manager
+emails arrived. Athena returned all 100 readings and five lifecycle events,
+scanning 53,684 bytes. The local monitor's exported credentials expired after 80
+readings; refreshing from the existing CLI profile completed the remaining 20
+without restarting the workload. Failure paths and concurrency were tested
+locally; Terraform tests checked DLQ/redrive and workflow timeout configuration.
+No AWS fault injection or forced redrive was performed.
 
 Terraform is split by service: `lambda.tf`, `iam.tf`, `queues.tf`, `api.tf`,
 `eventbridge.tf`, `dynamodb.tf`, `s3.tf`, `sns.tf`, `step_functions.tf`,
 `glue.tf`, `athena.tf`, and `cloudwatch.tf`. Environment `main.tf` files only
 wire the reusable module; providers, variables, backend and outputs are separate.
+
+| Course area | Coverage |
+|---|---|
+| IaC and cloud services | Implemented: reusable Terraform, private S3 state, native locking and serverless services |
+| Git-managed delivery | Implemented: pinned GitHub checks/artifacts and reviewed local saved-plan apply; OIDC blocked by account policy |
+| Event processing | Implemented: buffering, transactional outbox, deduplication and bounded escalation |
+| Analytics and observability | Implemented: S3/Glue/Athena SQL, JSON logs, nine alarms and sampled native traces |
+| Richer processing, ML and GenAI | Future work: Parquet/ETL, silence detection, trained models and GenAI; no optional services deployed |
+
+SQS batches replace Firehose for this small workload; Firehose also requires a
+Paid plan on this signup. A known Glue schema avoids a crawler. Lambda validates
+HTTP API JSON; a bounded Wait/Choice workflow replaces emailed callback tokens.
+These choices retain the event-driven course coverage with fewer moving parts.
 
 ## Account and cost controls
 
@@ -59,8 +85,10 @@ profile is `coldchain-console`; override with `COLDCHAIN_PROFILE`. Helpers verif
 STS, reject root/account mismatches, and pass temporary credentials in memory.
 No static keys or secret values enter Git/Terraform. See [AWS browser login](https://docs.aws.amazon.com/cli/latest/userguide/cli-configure-sign-in.html).
 
-Verified 17 November 2026: ACTIVE Free plan, **$100 remaining**, plan expiry
-17 May 2027. Gross usage was $0 **estimated**, before delayed recent API charges.
+Verified 17 November 2026: ACTIVE Free plan, **$160 remaining** after deployment
+($100 before deployment), plan expiry 17 May 2027. The reason for the balance
+increase is unverified; the spending target remains unchanged. The last gross
+usage result was $0 **estimated**, before delayed deployment/demo charges.
 Detailed credit eligibility/expiry remains unverified because billing access is
 restricted. The owner approved GitHub CI plus **reviewed local delivery**: this
 signup's policy blocks OIDC providers. No paid upgrade is authorized.
@@ -79,13 +107,18 @@ conservative tracing and bounded query/transfer allowances. Tax, unrelated usage
 attacks and retry storms are excluded. Eligible charges should consume credits;
 zero cash is expected while the Free plan stays active, not because a card is
 absent. Keep the **$25 total target and $50 reserve**. These are not hard caps.
-[Official prices](https://aws.amazon.com/pricing/) · [Free plan](https://docs.aws.amazon.com/awsaccountbilling/latest/aboutv2/free-tier-plans.html).
+[Stockholm API tariffs](https://pricing.us-east-1.amazonaws.com/offers/v1.0/aws/AmazonApiGateway/current/eu-north-1/index.json),
+[Lambda tariffs](https://pricing.us-east-1.amazonaws.com/offers/v1.0/aws/AWSLambda/current/eu-north-1/index.json),
+[CloudWatch tariffs](https://pricing.us-east-1.amazonaws.com/offers/v1.0/aws/AmazonCloudWatch/current/eu-north-1/index.json)
+and the other service rate snapshots/calculation are retained privately in `.local/`.
+[Free plan restrictions](https://docs.aws.amazon.com/awsaccountbilling/latest/aboutv2/free-tier-plans.html).
 
-Proposed deployment: **7 bootstrap + 100 application/configuration resources**,
+Deployed after owner approval: **7 bootstrap + 100 application/configuration resources**,
 six runtime SecureString parameters, and state/recovery objects; one dev environment.
 Budget warnings at actual $5/$10/$20/$25 and forecast $25 cover 17 Nov–17 Dec 2026,
 exclude credits/refunds and require email verification where AWS requests it.
-They are delayed warnings. Plans and detailed evidence stay private in `.local/`.
+All five notifications were verified. They are delayed warnings. Budgets uses the
+us-east-1 endpoint; IAM is global. Plans and detailed evidence stay private in `.local/`.
 
 ## Deploy after approval
 
@@ -119,11 +152,12 @@ private recovery backup. Ordinary application destroy preserves that backend.
 
 ## Demo and cleanup
 
-Confirm the three SNS subscriptions. Run the default simulator with the returned
+All three SNS subscriptions are confirmed for the current deployment. On a fresh
+deployment, confirm them before running the simulator. Run it with the returned
 API URL and `.local/device-credentials-dev.json`; it sends at most 100 readings,
 three HTTP attempts each, for at most ten minutes on macOS/Linux. Ctrl-C stops it.
 Normal → single spike/reset → sustained breach (~150 s) → staff → escalation
-(~270 s) → explicit POST acknowledgement → recovery (~450 s).
+(~270 s) → explicit POST acknowledgement → recovery (~450 s), plus queue latency.
 
 ```bash
 .venv/bin/python -m simulator.run --url https://REPLACE.execute-api.eu-north-1.amazonaws.com \
