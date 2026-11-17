@@ -36,7 +36,14 @@ def commit():
     return result.stdout.strip() if result.returncode == 0 else "UNCOMMITTED"
 
 
-def verify_saved_plan(meta, plan, revision, source_hash, account, data_loss, now):
+def worktree_clean():
+    result = subprocess.run(
+        ["git", "status", "--porcelain", "--untracked-files=normal"], cwd=ROOT, capture_output=True, text=True
+    )
+    return result.returncode == 0 and not result.stdout.strip()
+
+
+def verify_saved_plan(meta, plan, revision, source_hash, account, data_loss, now, *, clean):
     if account != ACCOUNT:
         raise ValueError("Correct account confirmation is required after deployment approval")
     if meta["preview_only"]:
@@ -45,6 +52,8 @@ def verify_saved_plan(meta, plan, revision, source_hash, account, data_loss, now
         raise ValueError("Destroy requires explicit data-loss confirmation")
     if meta["commit"] == "UNCOMMITTED" or revision != meta["commit"]:
         raise ValueError("A reviewed plan for the current committed revision is required")
+    if not meta.get("clean_worktree", False) or not clean:
+        raise ValueError("Commit source changes, then regenerate and review the plan")
     if source_hash != meta["source_sha256"] or hashlib.sha256(plan.read_bytes()).hexdigest() != meta["plan_sha256"]:
         raise ValueError("Source, configuration, package or plan changed; regenerate and review")
     if not 0 <= now - meta["created_at"] <= 86400:
@@ -120,6 +129,7 @@ def main():
         ]
         metadata = {
             "commit": commit(),
+            "clean_worktree": worktree_clean(),
             "source_sha256": fingerprint(),
             "plan_sha256": hashlib.sha256(plan.read_bytes()).hexdigest(),
             "created_at": int(time.time()),
@@ -133,7 +143,14 @@ def main():
         meta = json.loads(manifest.read_text())
         try:
             verify_saved_plan(
-                meta, plan, commit(), fingerprint(), args.confirm_account, args.confirm_data_loss, int(time.time())
+                meta,
+                plan,
+                commit(),
+                fingerprint(),
+                args.confirm_account,
+                args.confirm_data_loss,
+                int(time.time()),
+                clean=worktree_clean(),
             )
         except ValueError as exc:
             p.error(str(exc))

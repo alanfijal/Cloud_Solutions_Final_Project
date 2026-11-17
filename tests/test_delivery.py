@@ -24,6 +24,7 @@ def saved(tmp_path):
         "preview_only": False,
         "destroy": False,
         "commit": "revision",
+        "clean_worktree": True,
         "source_sha256": "source",
         "plan_sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
         "created_at": 100,
@@ -33,7 +34,7 @@ def saved(tmp_path):
 
 def test_exact_saved_plan_is_accepted(tmp_path):
     path, meta = saved(tmp_path)
-    verify_saved_plan(meta, path, "revision", "source", ACCOUNT, False, 101)
+    verify_saved_plan(meta, path, "revision", "source", ACCOUNT, False, 101, clean=True)
 
 
 @pytest.mark.parametrize(
@@ -52,7 +53,7 @@ def test_unreviewed_or_stale_plan_is_refused(tmp_path, change):
     meta.update(change)
     now = 90000 if change == {"created_at": 0} else 101
     with pytest.raises(ValueError):
-        verify_saved_plan(meta, path, "revision", "source", ACCOUNT, False, now)
+        verify_saved_plan(meta, path, "revision", "source", ACCOUNT, False, now, clean=True)
 
 
 def test_changed_package_revision_or_account_refuses_apply(tmp_path):
@@ -63,7 +64,7 @@ def test_changed_package_revision_or_account_refuses_apply(tmp_path):
         ("revision", "source", "111111111111"),
     ]:
         with pytest.raises(ValueError):
-            verify_saved_plan(meta, path, revision, source, account, False, 101)
+            verify_saved_plan(meta, path, revision, source, account, False, 101, clean=True)
 
 
 def test_parameter_cleanup_refuses_untagged_resources():
@@ -100,3 +101,11 @@ def test_preview_strips_backend_from_separate_file(tmp_path):
     assert 'backend "s3"' not in (target / "backend.tf").read_text()
     assert not (target / "terraform.tfstate").exists()
     assert (target / ".terraform.lock.hcl").read_text() == "# pinned provider\n"
+
+
+@pytest.mark.parametrize("planned_clean,current_clean", [(False, True), (True, False)])
+def test_dirty_source_before_or_after_plan_refuses_apply(tmp_path, planned_clean, current_clean):
+    path, meta = saved(tmp_path)
+    meta["clean_worktree"] = planned_clean
+    with pytest.raises(ValueError, match="Commit source changes"):
+        verify_saved_plan(meta, path, "revision", "source", ACCOUNT, False, 101, clean=current_clean)
