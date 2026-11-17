@@ -217,7 +217,8 @@ function render() {
   $("unit-grid").innerHTML = selected
     .map((u) => {
       const [kind, label] = status(u);
-      return `<button class="unit-card ${kind === "open" || kind === "escalated" ? "alert" : kind}" data-chart="${esc(u.unit_id)}" aria-label="View ${esc(name(u))} temperature history"><div class="unit-top"><span class="unit-type"><span class="unit-symbol ${unitKind(u)}">${unitKind(u) === "freezer" ? "❄" : "▤"}</span>${esc(name(u))}</span><span class="badge ${kind}">${label}</span></div><div class="temperature-line"><strong class="temperature">${temperature(u.temperature)}<small> °C</small></strong><span class="temperature-label">${u.direction === "max" ? "Max" : "Min"} ${temperature(u.threshold)}°C</span></div>${chart(u)}<div class="unit-bottom"><span>${esc(u.unit_id)} · ${esc(u.site_id)}</span><span>${esc(relative(u.observed_at))}</span></div></button>`;
+      const severity = outside(u) ? (u.consecutive >= 3 ? "alert" : "warning") : "";
+      return `<button class="unit-card ${kind} ${severity}" data-chart="${esc(u.unit_id)}" aria-label="View ${esc(name(u))} temperature history"><div class="unit-top"><span class="unit-type"><span class="unit-symbol ${unitKind(u)}">${unitKind(u) === "freezer" ? "❄" : "▤"}</span>${esc(name(u))}</span><span class="badge ${kind}">${label}</span></div><div class="temperature-line"><strong class="temperature">${temperature(u.temperature)}<small> °C</small></strong><span class="temperature-label">${u.direction === "max" ? "Max" : "Min"} ${temperature(u.threshold)}°C</span></div>${chart(u)}<div class="unit-bottom"><span>${esc(u.unit_id)} · ${esc(u.site_id)}</span><span>${esc(relative(u.observed_at))}</span></div></button>`;
     })
     .join("");
   const all = incidents();

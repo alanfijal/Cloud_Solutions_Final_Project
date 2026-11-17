@@ -5,7 +5,8 @@ Small AWS temperature-monitoring demo for the ESADE Cloud Solutions project.
 
 The web dashboard uses **private S3 + CloudFront**, with authenticated API access
 for temperatures, recent charts, incidents, acknowledgement and demo controls.
-Open `dashboard_url` from Terraform outputs and connect with the operator key:
+Open **[the live dashboard](https://dazwahczj9j0k.cloudfront.net)** (also available
+as `dashboard_url` in Terraform outputs) and connect with the operator key:
 
 ```bash
 pbcopy < .local/dashboard-credential-dev.txt
@@ -48,7 +49,7 @@ recovery support, not legal immutability. SQL deduplicates overlapping batches.
 
 ## Local checks
 
-Requires Python 3.13 and Terraform **1.17.0**. AWS access is unnecessary for tests.
+Requires Python 3.13 and Terraform **1.17.0**. AWS access is unnecessary for local tests.
 
 ```bash
 python3 -m venv .venv
@@ -70,9 +71,10 @@ mocked providers and create no AWS resources. Local evidence: **57 Python tests*
 two Terraform tests, all four root validations, actionlint, runtime dependency
 audit and Trivy's HIGH/CRITICAL gate passed. Three narrow cost/security scan exceptions
 are recorded in `.trivyignore.yaml`. Independent package builds matched, including
-in a fresh hash-locked environment. [GitHub CI](https://github.com/alanfijal/Cloud_Solutions_Final_Project/actions/runs/44142650120)
-and [delivery preparation](https://github.com/alanfijal/Cloud_Solutions_Final_Project/actions/runs/44142940523)
-passed; the Linux-built artifact matches all seven live Lambda code hashes.
+in a fresh hash-locked environment. [Dashboard CI](https://github.com/alanfijal/Cloud_Solutions_Final_Project/actions/runs/44151741024)
+and [delivery preparation](https://github.com/alanfijal/Cloud_Solutions_Final_Project/actions/runs/44160965099)
+passed, including mocked desktop/mobile browser checks. Lambda and frontend
+artifacts are produced from the same commit.
 
 AWS rehearsal, 17 November 2026: 100 distinct readings plus one duplicate replay;
 normal/spike/reset, sustained breach, escalation, late POST acknowledgement and
@@ -84,6 +86,12 @@ readings; refreshing from the existing CLI profile completed the remaining 20
 without restarting the workload. Failure paths and concurrency were tested
 locally; Terraform tests checked DLQ/redrive and workflow timeout configuration.
 No AWS fault injection or forced redrive was performed.
+
+The deployed dashboard also passed a **ten-reading live browser smoke test**:
+login, all five unit cards, manual submissions, a new incident, in-app
+acknowledgement, recovery, chart/CSV export, mobile layout, and guided-demo
+start/stop. Anonymous API access returned 401 and direct S3 access returned 403.
+Both processing queues and all five DLQs drained; no simulator was left running.
 
 Terraform is split by service: `lambda.tf`, `iam.tf`, `queues.tf`, `api.tf`,
 `eventbridge.tf`, `dynamodb.tf`, `s3.tf`, `sns.tf`, `step_functions.tf`,
@@ -153,9 +161,13 @@ No CloudFront flat-rate plan, account upgrade, custom domain, WAF subscription o
 edge function is enabled. CloudFront is global; private buckets/functions remain
 in Stockholm. OAC signs S3 origin requests; authenticated API responses use
 CachingDisabled with Authorization forwarded. Static assets can cache for 60 seconds.
+The $29.57 continuous scenario above describes repeated CLI demos. Conservatively
+scaling the added dashboard traffic with repeated restarts gives approximately
+**$56.56 gross/month** before free allowances/credits; shipped controls stop each
+run after ten minutes and polling also pauses. They do not impose a spending cap.
 
-Deployed after owner approval: **7 bootstrap + 100 application/configuration resources**,
-six runtime SecureString parameters, and state/recovery objects; one dev environment.
+Deployed after owner approval: **7 bootstrap + 124 application/configuration resources**,
+seven runtime SecureString parameters, and state/recovery objects; one dev environment.
 Budget warnings at actual $5/$10/$20/$25 and forecast $25 cover 17 Nov–17 Dec 2026,
 exclude credits/refunds and require email verification where AWS requests it.
 All five notifications were verified. They are delayed warnings. Budgets uses the

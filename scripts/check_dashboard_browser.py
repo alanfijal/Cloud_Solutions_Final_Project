@@ -121,6 +121,7 @@ def main():
             page.locator("#all-incidents button[data-ack]").click()
             expect(page.locator("#all-incidents")).to_contain_text("Acknowledged")
             page.locator(".nav-item[data-view=overview]").click()
+            expect(page.locator(".unit-card.acknowledged.alert")).to_have_count(1)
             page.locator("#manual-temperature").fill("7")
             page.locator("#send-reading").click()
             expect(page.locator("#manual-status")).to_contain_text("accepted", timeout=10000)
