@@ -20,7 +20,7 @@ def main():
     ssm = session().client("ssm", config=CONFIG)
     prefix = "/coldchain-" + args.environment
     credentials = {}
-    for suffix in [*(f"devices/unit-{i}" for i in range(1, 6)), "ack"]:
+    for suffix in [*(f"devices/unit-{i}" for i in range(1, 6)), "ack", "dashboard"]:
         name = prefix + "/" + suffix
         try:
             value = ssm.get_parameter(Name=name, WithDecryption=True)["Parameter"]["Value"]
@@ -46,11 +46,17 @@ def main():
             )
         if suffix.startswith("devices/"):
             credentials[suffix.split("/")[-1]] = value
+        if suffix == "dashboard":
+            dashboard_path = Path(".local/dashboard-credential-" + args.environment + ".txt")
+            dashboard_path.parent.mkdir(exist_ok=True)
+            dashboard_path.write_text(value)
+            dashboard_path.chmod(0o600)
     path = Path(".local/device-credentials-" + args.environment + ".json")
     path.parent.mkdir(exist_ok=True)
     path.write_text(json.dumps(credentials))
     path.chmod(0o600)
-    print("Provisioned/reused six standard SecureString parameters; local simulator credential file:", path)
+    print("Provisioned/reused seven standard SecureString parameters; local simulator credential file:", path)
+    print("Operator access key saved privately:", dashboard_path)
     print("No credential values were logged. Existing parameters were not rotated.")
 
 

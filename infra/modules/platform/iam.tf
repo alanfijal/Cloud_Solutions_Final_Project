@@ -26,6 +26,12 @@ locals {
     ])
     workflow = concat(local.state_access, local.async_failure)
     ack      = concat(local.state_access, local.ack_secret)
+    dashboard = [{ actions = ["dynamodb:GetItem"], resources = [local.table_arn] }, {
+      actions = ["ssm:GetParameter"], resources = concat(
+        ["arn:aws:ssm:${local.region}:${local.account}:parameter/${local.name}/dashboard", "arn:aws:ssm:${local.region}:${local.account}:parameter/${local.name}/ack"],
+        [for u in values(var.units) : "arn:aws:ssm:${local.region}:${local.account}:parameter${u.credential_parameter}"]
+      )
+    }]
     lake = [
       { actions = ["sqs:ReceiveMessage", "sqs:DeleteMessage", "sqs:GetQueueAttributes"], resources = [aws_sqs_queue.main["lake"].arn] },
       { actions = ["s3:PutObject"], resources = ["${aws_s3_bucket.data["lake"].arn}/raw/*"] }

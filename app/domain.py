@@ -52,6 +52,8 @@ def apply_reading(old, reading, config, now):
         if gap > 90:
             state["count"] = 0
     state["last_time"] = reading["observed_at"]
+    state["temperature"] = reading["temperature"]
+    state["history"] = (state.get("history", []) + [[reading["observed_at"], reading["temperature"]]])[-20:]
     high = reading["temperature"] > config["threshold"]
     breach = high if config["direction"] == "max" else reading["temperature"] < config["threshold"]
     state["count"] = min(3, state["count"] + 1) if breach else 0
@@ -73,6 +75,10 @@ def apply_reading(old, reading, config, now):
         incident["status"] = "resolved"
         incident["resolved_at"] = now
         events.append(event("incident.resolved", incident, reading["reading_id"]))
+    if state.get("incident"):
+        latest = state["incident"]
+        previous = [i for i in state.get("recent_incidents", []) if i["incident_id"] != latest["incident_id"]]
+        state["recent_incidents"] = (previous + [copy.deepcopy(latest)])[-5:]
     return state, events
 
 

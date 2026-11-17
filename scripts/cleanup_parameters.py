@@ -15,6 +15,7 @@ def main():
         p.error("Correct account and explicit --confirm-data-loss required after cleanup approval")
     names = [f"/coldchain-{args.environment}/devices/unit-{i}" for i in range(1, 6)]
     names.append(f"/coldchain-{args.environment}/ack")
+    names.append(f"/coldchain-{args.environment}/dashboard")
     ssm = session().client("ssm", config=CONFIG)
     confirmed = []
     for name in names:

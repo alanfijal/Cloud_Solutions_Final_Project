@@ -4,7 +4,7 @@ resource "aws_apigatewayv2_api" "main" {
 }
 
 resource "aws_apigatewayv2_integration" "lambda" {
-  for_each               = toset(["ingest", "ack"])
+  for_each               = toset(["ingest", "ack", "dashboard"])
   api_id                 = aws_apigatewayv2_api.main.id
   integration_type       = "AWS_PROXY"
   integration_uri        = aws_lambda_function.app[each.key].invoke_arn
@@ -13,7 +13,9 @@ resource "aws_apigatewayv2_integration" "lambda" {
 
 resource "aws_apigatewayv2_route" "main" {
   for_each = {
-    "POST /readings" = "ingest", "GET /ack" = "ack", "POST /ack" = "ack"
+    "POST /readings"           = "ingest", "GET /ack" = "ack", "POST /ack" = "ack",
+    "GET /dashboard/state"     = "dashboard",
+    "POST /dashboard/readings" = "dashboard", "POST /dashboard/ack" = "dashboard"
   }
   api_id    = aws_apigatewayv2_api.main.id
   route_key = each.key

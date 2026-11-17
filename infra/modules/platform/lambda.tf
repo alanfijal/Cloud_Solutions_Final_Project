@@ -3,7 +3,7 @@ resource "aws_lambda_function" "app" {
   function_name    = "${local.name}-${each.key}"
   role             = aws_iam_role.lambda[each.key].arn
   runtime          = "python3.13"
-  handler          = "app.handlers.${each.key}"
+  handler          = each.key == "dashboard" ? "app.dashboard.handler" : "app.handlers.${each.key}"
   filename         = "${path.module}/../../../artifacts/app.zip"
   source_code_hash = filebase64sha256("${path.module}/../../../artifacts/app.zip")
   memory_size      = 128
@@ -12,16 +12,17 @@ resource "aws_lambda_function" "app" {
   reserved_concurrent_executions = 2
   environment {
     variables = {
-      INGESTION_ENABLED = tostring(var.ingestion_enabled)
-      TABLE             = aws_dynamodb_table.state.name
-      BUS               = aws_cloudwatch_event_bus.main.name
-      UNITS             = jsonencode(var.units)
-      ACK_PARAMETER     = "/${local.name}/ack"
-      WORKFLOW          = "arn:aws:states:${local.region}:${local.account}:stateMachine:${local.name}"
-      API_URL           = aws_apigatewayv2_api.main.api_endpoint
-      STAFF_TOPIC       = aws_sns_topic.alerts["staff"].arn
-      MANAGER_TOPIC     = aws_sns_topic.alerts["manager"].arn
-      LAKE              = aws_s3_bucket.data["lake"].id
+      INGESTION_ENABLED   = tostring(var.ingestion_enabled)
+      TABLE               = aws_dynamodb_table.state.name
+      BUS                 = aws_cloudwatch_event_bus.main.name
+      UNITS               = jsonencode(var.units)
+      ACK_PARAMETER       = "/${local.name}/ack"
+      DASHBOARD_PARAMETER = "/${local.name}/dashboard"
+      WORKFLOW            = "arn:aws:states:${local.region}:${local.account}:stateMachine:${local.name}"
+      API_URL             = aws_apigatewayv2_api.main.api_endpoint
+      STAFF_TOPIC         = aws_sns_topic.alerts["staff"].arn
+      MANAGER_TOPIC       = aws_sns_topic.alerts["manager"].arn
+      LAKE                = aws_s3_bucket.data["lake"].id
     }
   }
   depends_on = [aws_iam_role_policy.lambda]
@@ -80,6 +81,16 @@ resource "aws_lambda_permission" "api" {
   function_name  = aws_lambda_function.app[each.key].function_name
   principal      = "apigateway.amazonaws.com"
   source_arn     = each.key == "ingest" ? "${aws_apigatewayv2_api.main.execution_arn}/*/POST/readings" : "${aws_apigatewayv2_api.main.execution_arn}/*/*/ack"
+  source_account = local.account
+}
+
+resource "aws_lambda_permission" "dashboard" {
+  for_each       = toset(["GET/dashboard/state", "POST/dashboard/readings", "POST/dashboard/ack"])
+  statement_id   = "Dashboard${replace(replace(each.key, "/", ""), "-", "")}"
+  action         = "lambda:InvokeFunction"
+  function_name  = aws_lambda_function.app["dashboard"].function_name
+  principal      = "apigateway.amazonaws.com"
+  source_arn     = "${aws_apigatewayv2_api.main.execution_arn}/*/${each.key}"
   source_account = local.account
 }
 
