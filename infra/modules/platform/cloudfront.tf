@@ -56,7 +56,7 @@ resource "aws_cloudfront_distribution" "web" {
     origin_id                = "private-web"
     domain_name              = aws_s3_bucket.web.bucket_regional_domain_name
     origin_access_control_id = aws_cloudfront_origin_access_control.web.id
-    s3_origin_config { origin_access_identity = "" }
+    # Omit the legacy empty OAI block; the API normalizes it away when using OAC.
   }
   origin {
     origin_id   = "dashboard-api"
