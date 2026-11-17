@@ -44,4 +44,9 @@ run "bounded_demo" {
     condition     = jsondecode(aws_sfn_state_machine.incident.definition).TimeoutSeconds == 600
     error_message = "The workflow must have a ten-minute hard timeout."
   }
+  assert {
+    condition     = jsondecode(aws_iam_role.workflow.assume_role_policy).Statement[0].Condition.StringEquals["aws:SourceAccount"] == "028718095604" && jsondecode(aws_iam_role.workflow.assume_role_policy).Statement[0].Condition.ArnLike["aws:SourceArn"] == "arn:aws:states:eu-north-1:028718095604:stateMachine:coldchain-dev"
+    error_message = "Workflow role trust must be scoped to this account and state machine."
+  }
+
 }

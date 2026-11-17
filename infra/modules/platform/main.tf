@@ -99,7 +99,7 @@ resource "aws_sqs_queue_policy" "events" {
       }, Action = "sqs:SendMessage", Resource = each.value.arn,
       Condition = {
         ArnEquals = {
-          "aws:SourceArn" = [aws_cloudwatch_event_rule.readings.arn, aws_cloudwatch_event_rule.history.arn, aws_cloudwatch_event_rule.responses.arn, aws_cloudwatch_event_rule.workflow_failures.arn]
+          "aws:SourceArn" = each.key == "detector" ? [aws_cloudwatch_event_rule.readings.arn] : each.key == "lake" ? [aws_cloudwatch_event_rule.history.arn] : [aws_cloudwatch_event_rule.readings.arn, aws_cloudwatch_event_rule.history.arn, aws_cloudwatch_event_rule.responses.arn, aws_cloudwatch_event_rule.workflow_failures.arn]
           }, StringEquals = {
           "aws:SourceAccount" = local.account
         }
@@ -362,12 +362,13 @@ resource "aws_apigatewayv2_stage" "main" {
   }
 }
 resource "aws_lambda_permission" "api" {
-  for_each      = toset(["ingest", "ack"])
-  statement_id  = "APIGateway"
-  action        = "lambda:InvokeFunction"
-  function_name = aws_lambda_function.app[each.key].function_name
-  principal     = "apigateway.amazonaws.com"
-  source_arn    = "${aws_apigatewayv2_api.main.execution_arn}/*/*"
+  for_each       = toset(["ingest", "ack"])
+  statement_id   = "APIGateway"
+  action         = "lambda:InvokeFunction"
+  function_name  = aws_lambda_function.app[each.key].function_name
+  principal      = "apigateway.amazonaws.com"
+  source_arn     = each.key == "ingest" ? "${aws_apigatewayv2_api.main.execution_arn}/*/POST/readings" : "${aws_apigatewayv2_api.main.execution_arn}/*/*/ack"
+  source_account = local.account
 }
 resource "aws_iam_role" "workflow" {
   name = "${local.name}-states"
@@ -375,7 +376,10 @@ resource "aws_iam_role" "workflow" {
     Version = "2012-10-17", Statement = [{
       Effect = "Allow", Principal = {
         Service = "states.amazonaws.com"
-      }, Action = "sts:AssumeRole"
+        }, Action = "sts:AssumeRole", Condition = {
+        StringEquals = { "aws:SourceAccount" = local.account },
+        ArnLike      = { "aws:SourceArn" = "arn:aws:states:${local.region}:${local.account}:stateMachine:${local.name}" }
+      }
       }
     ]
     }
