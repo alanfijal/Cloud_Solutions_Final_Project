@@ -20,6 +20,12 @@ def main():
         "workflows": ("stepfunctions", "list-state-machines", ["--query", "stateMachines[].name"], "eu-north-1"),
         "apis": ("apigatewayv2", "get-apis", ["--query", "Items[].{name:Name,id:ApiId}"], "eu-north-1"),
         "topics": ("sns", "list-topics", [], "eu-north-1"),
+        "parameters": (
+            "ssm",
+            "describe-parameters",
+            ["--parameter-filters", "Key=Name,Option=BeginsWith,Values=/coldchain-", "--query", "Parameters[].Name"],
+            "eu-north-1",
+        ),
         "project_roles": (
             "iam",
             "list-roles",

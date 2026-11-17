@@ -64,3 +64,21 @@ def test_changed_package_revision_or_account_refuses_apply(tmp_path):
     ]:
         with pytest.raises(ValueError):
             verify_saved_plan(meta, path, revision, source, account, False, 101)
+
+
+def test_parameter_cleanup_refuses_untagged_resources():
+    from unittest.mock import Mock
+
+    from scripts import cleanup_parameters
+
+    ssm = Mock()
+    ssm.describe_parameters.return_value = {"Parameters": [{"Name": "/coldchain-dev/ack"}]}
+    ssm.list_tags_for_resource.return_value = {"TagList": []}
+    with patch.object(cleanup_parameters, "session") as session:
+        session.return_value.client.return_value = ssm
+        with patch(
+            "sys.argv", ["cleanup", "--environment", "dev", "--confirm-account", ACCOUNT, "--confirm-data-loss"]
+        ):
+            with pytest.raises(RuntimeError, match="ownership"):
+                cleanup_parameters.main()
+    ssm.delete_parameters.assert_not_called()

@@ -24,6 +24,12 @@ def main():
         name = prefix + "/" + suffix
         try:
             value = ssm.get_parameter(Name=name, WithDecryption=True)["Parameter"]["Value"]
+            tags = {
+                t["Key"]: t["Value"]
+                for t in ssm.list_tags_for_resource(ResourceType="Parameter", ResourceId=name)["TagList"]
+            }
+            if tags.get("Project") != "ColdChainMonitor" or tags.get("Environment") != args.environment:
+                raise RuntimeError("Existing parameter ownership tags mismatch; refusing adoption")
         except ssm.exceptions.ParameterNotFound:
             value = secrets.token_urlsafe(32)
             ssm.put_parameter(
