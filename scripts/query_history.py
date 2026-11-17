@@ -13,7 +13,7 @@ def main():
     p = argparse.ArgumentParser()
     p.add_argument("--environment", choices=["dev", "demo"], default="dev")
     args = p.parse_args()
-    query = (Path(__file__).resolve().parents[1] / "docs/sql/history.sql").read_text()
+    query = (Path(__file__).resolve().parents[1] / "analytics/sql/history.sql").read_text()
     query = query.replace("coldchain_dev.events", f"coldchain_{args.environment}.events")
     athena = session().client("athena", config=CONFIG)
     qid = athena.start_query_execution(

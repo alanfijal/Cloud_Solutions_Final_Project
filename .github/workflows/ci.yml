@@ -46,5 +46,5 @@ jobs:
           scanners: misconfig,secret
           severity: HIGH,CRITICAL
           exit-code: '1'
-          skip-dirs: .git,.venv,.local,artifacts,docs/context
+          skip-dirs: .git,.venv,.local,artifacts,docs
           trivyignores: .trivyignore.yaml

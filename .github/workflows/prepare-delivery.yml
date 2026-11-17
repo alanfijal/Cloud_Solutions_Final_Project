@@ -51,7 +51,7 @@ jobs:
           {
             printf '## Local delivery preparation\n\nCommit: `%s`\n\n' "$GITHUB_SHA"
             printf 'Environment: `%s`; operation: `%s`.\n\n' "$TARGET_ENV" "$OPERATION"
-            printf 'No AWS credentials or cloud changes in this workflow. Follow docs/delivery.md.\n'
+            printf 'No AWS credentials or cloud changes in this workflow. Follow the local delivery steps in README.md.\n'
             printf 'Review a fresh saved local plan, then apply that same plan after owner approval.\n'
           } >> "$GITHUB_STEP_SUMMARY"
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2

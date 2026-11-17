@@ -5,10 +5,10 @@ misconfigurations:
     paths:
       - infra/bootstrap/s3.tf
       - infra/modules/platform/s3.tf
-    statement: 'S3 uses SSE-S3, private access and HTTPS. Customer-managed keys are explicitly excluded from this disposable demo. See docs/security.md.'
+    statement: 'S3 uses SSE-S3, private access and HTTPS. Customer-managed keys are explicitly excluded from this disposable demo.'
     expired_at: 2027-05-17
   - id: AWS-0136
     paths:
       - infra/modules/platform/sns.tf
-    statement: 'Staff/manager topics use AWS-managed SNS keys. Operations alarms contain resource metadata only; CloudWatch requires a customer-managed key for encrypted-topic delivery. See docs/security.md.'
+    statement: 'Staff/manager topics use AWS-managed SNS keys. Operations alarms contain resource metadata only; CloudWatch requires a customer-managed key for encrypted-topic delivery.'
     expired_at: 2027-05-17

@@ -9,7 +9,7 @@ from simulator.run import readings
 
 
 def test_full_demo_history_keeps_incidents_after_100_readings():
-    query = (Path(__file__).resolve().parents[1] / "docs/sql/history.sql").read_text()
+    query = (Path(__file__).resolve().parents[1] / "analytics/sql/history.sql").read_text()
     # Athena's equivalent JSON scalar function/database qualifier are the only substitutions.
     query = query.replace("coldchain_dev.events", "events").replace("json_extract_scalar(", "json_extract(")
     db = sqlite3.connect(":memory:")

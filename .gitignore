@@ -63,7 +63,7 @@ device-credentials*.json
 # Generated packages, local evidence/data and extracted teaching materials
 artifacts/
 .local/
-docs/context/
+/docs/
 *.log
 
 # Editor and OS metadata
