@@ -24,7 +24,7 @@ def main():
         status = result["Status"]["State"]
         if status == "SUCCEEDED":
             print(json.dumps({"query_execution_id": qid, "bytes_scanned": result["Statistics"]["DataScannedInBytes"]}))
-            print(json.dumps(athena.get_query_results(QueryExecutionId=qid, MaxResults=101)["ResultSet"]["Rows"]))
+            print(json.dumps(athena.get_query_results(QueryExecutionId=qid, MaxResults=201)["ResultSet"]["Rows"]))
             return
         if status in ("CANCELLED", "FAILED"):
             raise RuntimeError("Query " + status + ": " + qid)
