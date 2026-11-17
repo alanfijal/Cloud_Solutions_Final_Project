@@ -1,0 +1,62 @@
+name: Prepare local delivery
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        type: choice
+        options: [dev, demo]
+        default: dev
+      operation:
+        type: choice
+        options: [deploy, destroy]
+        default: deploy
+      confirmation:
+        description: 'For destroy preparation, type DESTROY-APP-DATA. This workflow never calls AWS.'
+        type: string
+        required: false
+permissions:
+  contents: read
+concurrency:
+  # Both configurations deliberately share one backend state key.
+  group: coldchain-delivery
+  cancel-in-progress: false
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      TARGET_ENV: ${{ inputs.environment }}
+      OPERATION: ${{ inputs.operation }}
+      CONFIRMATION: ${{ inputs.confirmation }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - name: Guard approved ref and destructive preparation
+        run: |
+          test "$GITHUB_REF" = refs/heads/main
+          if [ "$OPERATION" = destroy ]; then
+            test "$CONFIRMATION" = DESTROY-APP-DATA
+          fi
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: '3.13'
+      - run: python -m pip install --require-hashes -r requirements-dev.lock
+      - run: pytest -q
+      - run: python scripts/package.py
+      - name: Produce exact-commit handoff
+        run: |
+          printf '%s\n' "$GITHUB_SHA" > artifacts/commit.txt
+          sha256sum artifacts/app.zip > artifacts/SHA256SUMS
+          {
+            printf '## Local delivery preparation\n\nCommit: `%s`\n\n' "$GITHUB_SHA"
+            printf 'Environment: `%s`; operation: `%s`.\n\n' "$TARGET_ENV" "$OPERATION"
+            printf 'No AWS credentials or cloud changes in this workflow. Follow docs/delivery.md.\n'
+            printf 'Review a fresh saved local plan, then apply that same plan after owner approval.\n'
+          } >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: local-delivery-${{ github.sha }}
+          path: artifacts/
+          retention-days: 3
+          if-no-files-found: error
