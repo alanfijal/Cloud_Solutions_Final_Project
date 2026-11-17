@@ -5,6 +5,7 @@ import hashlib
 import json
 import os
 import pathlib
+import re
 import subprocess
 import time
 
@@ -50,6 +51,18 @@ def verify_saved_plan(meta, plan, revision, source_hash, account, data_loss, now
         raise ValueError("Plan time is invalid or older than 24 hours; refresh and review")
 
 
+def prepare_preview(source, destination):
+    """Copy root configuration without a live backend, regardless of .tf filenames."""
+    for path in source.glob("*"):
+        if not path.is_file() or path.suffix not in (".tf", ".json", ".hcl"):
+            continue
+        target = destination / path.name
+        if path.suffix == ".tf":
+            target.write_text(re.sub(r'backend\s+"s3"\s*\{\s*\}', "", path.read_text()))
+        else:
+            target.write_bytes(path.read_bytes())
+
+
 def main():
     os.umask(0o077)
     p = argparse.ArgumentParser()
@@ -82,16 +95,11 @@ def main():
             if args.root == "bootstrap":
                 p.error("Bootstrap uses plan; preview is only for the application before its backend exists")
             # Preview is a separate copy without a backend block, using isolated local state.
-            import re
             import tempfile
 
             with tempfile.TemporaryDirectory(prefix="coldchain-preview-", dir=ROOT / "infra/environments") as temporary:
                 preview = pathlib.Path(temporary)
-                for path in root.glob("*"):
-                    if path.is_file() and path.suffix in (".tf", ".json", ".hcl"):
-                        preview.joinpath(path.name).write_bytes(path.read_bytes())
-                text = (preview / "main.tf").read_text()
-                (preview / "main.tf").write_text(re.sub(r'backend "s3" \{\s*\}', "", text))
+                prepare_preview(root, preview)
                 preview_base = ["terraform", "-chdir=" + str(preview)]
                 subprocess.run(
                     preview_base + ["init", "-backend=false", "-input=false", "-lockfile=readonly"], env=env, check=True

@@ -82,3 +82,21 @@ def test_parameter_cleanup_refuses_untagged_resources():
             with pytest.raises(RuntimeError, match="ownership"):
                 cleanup_parameters.main()
     ssm.delete_parameters.assert_not_called()
+
+
+def test_preview_strips_backend_from_separate_file(tmp_path):
+    from scripts.terraform_local import prepare_preview
+
+    source, target = tmp_path / "source", tmp_path / "preview"
+    source.mkdir()
+    target.mkdir()
+    main = 'module "platform" { source = "../../modules/platform" }\n'
+    (source / "main.tf").write_text(main)
+    (source / "backend.tf").write_text('terraform {\n  backend "s3" {}\n}\n')
+    (source / "terraform.tfstate").write_text("must never be copied")
+    (source / ".terraform.lock.hcl").write_text("# pinned provider\n")
+    prepare_preview(source, target)
+    assert (target / "main.tf").read_text() == main
+    assert 'backend "s3"' not in (target / "backend.tf").read_text()
+    assert not (target / "terraform.tfstate").exists()
+    assert (target / ".terraform.lock.hcl").read_text() == "# pinned provider\n"
