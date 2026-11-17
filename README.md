@@ -3,7 +3,28 @@
 Small AWS temperature-monitoring demo for the ESADE Cloud Solutions project.
 **Dev is deployed in Stockholm. The bounded AWS rehearsal and GitHub checks passed.**
 
+The web dashboard uses **private S3 + CloudFront**, with authenticated API access
+for temperatures, recent charts, incidents, acknowledgement and demo controls.
+Open `dashboard_url` from Terraform outputs and connect with the operator key:
+
+```bash
+pbcopy < .local/dashboard-credential-dev.txt
+# Open dashboard_url in your browser, paste the key, and choose Open workspace.
+```
+
+Choose **Start guided demo**, or use **Send your own reading** to try individual
+temperatures. The guided demo sends one reading every six seconds across five
+units (each unit every 30 seconds), stopping at 100 readings or ten minutes.
+**Stop simulation**, disconnecting, or closing the tab stops future submissions.
+Don't run the CLI simulator at the same time. Auto-refresh stops after ten minutes;
+Refresh resumes it. Charts show the latest 20 accepted readings per unit; full
+history remains in S3/Athena. The shared demo operator key stays in tab memory;
+device keys and signed acknowledgement credentials stay server-side. Multi-user
+accounts and role management are outside this demonstration's scope.
+
 ```text
+Browser → CloudFront → private S3 dashboard files
+                    → HTTP API → authenticated dashboard Lambda
 Simulator → HTTP API → ingest Lambda → EventBridge → SQS → detector → DynamoDB
                                              ↑                   ↓ outbox stream
                                    publisher Lambda ←────────────┘
@@ -37,13 +58,17 @@ python3 -m venv .venv
 .venv/bin/python scripts/package.py
 .venv/bin/python -m scripts.demo_local
 terraform fmt -check -recursive infra
+# Optional local browser checks; CI also runs these with a mocked API:
+.venv/bin/python -m pip install --require-hashes -r requirements-browser.lock
+.venv/bin/python -m playwright install chromium
+.venv/bin/python scripts/check_dashboard_browser.py
 ```
 
 Initialize each Terraform root with `init -backend=false -lockfile=readonly`.
 Run `terraform test` in `infra/bootstrap` and `infra/modules/platform`; both use
-mocked providers and create no AWS resources. Local evidence: **44 Python tests**,
+mocked providers and create no AWS resources. Local evidence: **57 Python tests**,
 two Terraform tests, all four root validations, actionlint, runtime dependency
-audit and Trivy's HIGH/CRITICAL gate passed. Two narrow CMK-related scan exceptions
+audit and Trivy's HIGH/CRITICAL gate passed. Three narrow cost/security scan exceptions
 are recorded in `.trivyignore.yaml`. Independent package builds matched, including
 in a fresh hash-locked environment. [GitHub CI](https://github.com/alanfijal/Cloud_Solutions_Final_Project/actions/runs/44142650120)
 and [delivery preparation](https://github.com/alanfijal/Cloud_Solutions_Final_Project/actions/runs/44142940523)
@@ -67,7 +92,7 @@ wire the reusable module; providers, variables, backend and outputs are separate
 
 | Course area | Coverage |
 |---|---|
-| IaC and cloud services | Implemented: reusable Terraform, private S3 state, native locking and serverless services |
+| IaC and cloud services | Implemented: reusable Terraform, private S3 state, native locking, serverless services and S3/CloudFront web hosting |
 | Git-managed delivery | Implemented: pinned GitHub checks/artifacts and reviewed local saved-plan apply; OIDC blocked by account policy |
 | Event processing | Implemented: buffering, transactional outbox, deduplication and bounded escalation |
 | Analytics and observability | Implemented: S3/Glue/Athena SQL, JSON logs, nine alarms and sampled native traces |
@@ -112,6 +137,22 @@ absent. Keep the **$25 total target and $50 reserve**. These are not hard caps.
 [CloudWatch tariffs](https://pricing.us-east-1.amazonaws.com/offers/v1.0/aws/AmazonCloudWatch/current/eu-north-1/index.json)
 and the other service rate snapshots/calculation are retained privately in `.local/`.
 [Free plan restrictions](https://docs.aws.amazon.com/awsaccountbilling/latest/aboutv2/free-tier-plans.html).
+
+Dashboard addition priced 17 November 2026: 10 MB of static files, 1 GB/month
+served in Europe, 10,000 HTTPS requests and 100 uploads give approximately
+**$0.10/month** of S3/CloudFront hosting before credits/free allowances. Thirty
+bounded demo/dashboard sessions add about **$0.19/month**, including UI API calls,
+key access, traces/logs and larger bounded history writes. Reserve **$0.50/month**
+for the addition, giving approximately **$2.51/month** with the existing light-use
+baseline. This is a planning allowance, not a cap. The same hosting workload on
+Amplify with 30 standard build minutes is approximately $0.45/month.
+[CloudFront pay-as-you-go](https://aws.amazon.com/cloudfront/pricing/pay-as-you-go/),
+[S3 pricing](https://aws.amazon.com/s3/pricing/),
+[Amplify pricing](https://aws.amazon.com/amplify/pricing/).
+No CloudFront flat-rate plan, account upgrade, custom domain, WAF subscription or
+edge function is enabled. CloudFront is global; private buckets/functions remain
+in Stockholm. OAC signs S3 origin requests; authenticated API responses use
+CachingDisabled with Authorization forwarded. Static assets can cache for 60 seconds.
 
 Deployed after owner approval: **7 bootstrap + 100 application/configuration resources**,
 six runtime SecureString parameters, and state/recovery objects; one dev environment.
@@ -175,7 +216,7 @@ No recurring producer, crawler or query exists. A reviewed pause sets
 retain seven days, raw data fourteen days, query results seven days. Native/managed
 encryption avoids CMK monthly fees; the operations topic has no SNS SSE so native
 alarm delivery works without a CMK. Optional ETL/Parquet, silence detection,
-statistical trends, dashboards, trained ML and GenAI are not deployed.
+statistical trends, CloudWatch dashboards, trained ML and GenAI are not deployed.
 
 Cleanup requires explicit data-loss approval: stop/drain writers, run
 `empty_demo_buckets.py --environment dev --confirm-account 028718095604 --confirm-data-loss`,

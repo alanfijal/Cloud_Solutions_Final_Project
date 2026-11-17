@@ -2,6 +2,7 @@
 
 import hashlib
 import pathlib
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -43,3 +44,8 @@ with tempfile.TemporaryDirectory() as directory:
             info.external_attr = 0o100644 << 16
             z.writestr(info, source.read_bytes())
 print(hashlib.sha256((out / "app.zip").read_bytes()).hexdigest())
+web = out / "web"
+web.mkdir(exist_ok=True)
+for asset in (root / "app/web").glob("*"):
+    if asset.is_file() and asset.suffix in (".html", ".css", ".js"):
+        shutil.copyfile(asset, web / asset.name)

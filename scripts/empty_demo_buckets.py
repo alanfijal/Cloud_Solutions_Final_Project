@@ -14,7 +14,7 @@ def main():
     if args.confirm_account != ACCOUNT or not args.confirm_data_loss:
         p.error("Expected account and explicit --confirm-data-loss required after cleanup approval")
     s3 = session().client("s3", config=CONFIG)
-    for zone in ("lake", "queries"):
+    for zone in ("lake", "queries", "web"):
         bucket = f"coldchain-{args.environment}-{ACCOUNT}-{zone}"
         tags = {t["Key"]: t["Value"] for t in s3.get_bucket_tagging(Bucket=bucket)["TagSet"]}
         if tags.get("Project") != "ColdChainMonitor" or tags.get("Environment") != args.environment:

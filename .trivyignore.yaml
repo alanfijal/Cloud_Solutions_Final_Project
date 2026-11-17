@@ -1,6 +1,11 @@
-# Reviewed deviations required by the owner's no-customer-managed-KMS-key scope.
+# Reviewed cost/security tradeoffs for the disposable university demo.
 # Remaining LOW/MEDIUM findings stay visible in the full report.
 misconfigurations:
+  - id: AWS-0011
+    paths:
+      - infra/modules/platform/cloudfront.tf
+    statement: 'The bounded university demo omits paid WAF and Shield Advanced. Private OAC origin, HTTPS/security headers, operator authentication and API throttling apply; these are not DDoS spending caps.'
+    expired_at: 2027-05-17
   - id: AWS-0132
     paths:
       - infra/bootstrap/s3.tf

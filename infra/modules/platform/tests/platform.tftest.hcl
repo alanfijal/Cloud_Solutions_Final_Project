@@ -49,4 +49,17 @@ run "bounded_demo" {
     error_message = "Workflow role trust must be scoped to this account and state machine."
   }
 
+  assert {
+    condition     = aws_s3_bucket_public_access_block.web.block_public_acls && aws_s3_bucket_public_access_block.web.block_public_policy && aws_s3_bucket_public_access_block.web.ignore_public_acls && aws_s3_bucket_public_access_block.web.restrict_public_buckets && aws_cloudfront_origin_access_control.web.signing_behavior == "always"
+    error_message = "Frontend storage must remain private and accessible through signed CloudFront origin requests."
+  }
+  assert {
+    condition     = aws_cloudfront_distribution.web.ordered_cache_behavior[0].cache_policy_id == "4135ea2d-6df8-44a3-9df3-4b5a84be39ad" && aws_cloudfront_distribution.web.ordered_cache_behavior[0].origin_request_policy_id == "b689b0a8-53d0-40ab-baf2-68738e2966ac"
+    error_message = "Authenticated dashboard data must never be cached, and Authorization must reach API Gateway."
+  }
+  assert {
+    condition     = length(aws_s3_object.web) == 3 && length(aws_lambda_permission.dashboard) == 3 && !contains(flatten([for p in local.permissions.dashboard : p.actions]), "dynamodb:PutItem")
+    error_message = "The UI uses three static files, three scoped routes and read-only database access."
+  }
+
 }

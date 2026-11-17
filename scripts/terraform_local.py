@@ -21,7 +21,9 @@ def fingerprint():
         for path in (ROOT / directory).rglob("*"):
             if not path.is_file() or any(x in path.parts for x in (".terraform", "__pycache__")):
                 continue
-            if path.suffix in (".py", ".tf", ".hcl", ".toml") or path.name.endswith(("tfvars", "tfvars.json")):
+            if path.suffix in (".py", ".tf", ".hcl", ".toml", ".html", ".css", ".js", ".svg") or path.name.endswith(
+                ("tfvars", "tfvars.json")
+            ):
                 files.append(path)
     files += [ROOT / name for name in ("requirements.lock", ".terraform-version")]
     files += [ROOT / "artifacts/app.zip"] if (ROOT / "artifacts/app.zip").exists() else []

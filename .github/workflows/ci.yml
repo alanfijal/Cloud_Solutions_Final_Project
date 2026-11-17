@@ -26,6 +26,12 @@ jobs:
       - run: ruff check app simulator scripts tests
       - run: ruff format --check app simulator scripts tests
       - run: pytest -q
+      - name: Dashboard browser checks with mocked API
+        run: |
+          python -m pip install --require-hashes -r requirements-browser.lock
+          python -m playwright install --with-deps chromium
+          node --check app/web/dashboard.js
+          python scripts/check_dashboard_browser.py
       - run: pip-audit --disable-pip --no-deps -r requirements.lock
       - run: python scripts/package.py
       - name: Terraform format, validation and mocked security contracts

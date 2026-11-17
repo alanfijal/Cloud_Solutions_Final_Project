@@ -48,6 +48,7 @@ jobs:
         run: |
           printf '%s\n' "$GITHUB_SHA" > artifacts/commit.txt
           sha256sum artifacts/app.zip > artifacts/SHA256SUMS
+          sha256sum artifacts/web/* >> artifacts/SHA256SUMS
           {
             printf '## Local delivery preparation\n\nCommit: `%s`\n\n' "$GITHUB_SHA"
             printf 'Environment: `%s`; operation: `%s`.\n\n' "$TARGET_ENV" "$OPERATION"
