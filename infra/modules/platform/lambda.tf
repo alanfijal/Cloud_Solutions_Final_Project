@@ -3,7 +3,7 @@ resource "aws_lambda_function" "app" {
   function_name    = "${local.name}-${each.key}"
   role             = aws_iam_role.lambda[each.key].arn
   runtime          = "python3.13"
-  handler          = each.key == "dashboard" ? "app.dashboard.handler" : "app.handlers.${each.key}"
+  handler          = lookup({ dashboard = "app.dashboard.handler", sessions = "app.sessions.tick", reports = "app.reports.handler" }, each.key, "app.handlers.${each.key}")
   filename         = "${path.module}/../../../artifacts/app.zip"
   source_code_hash = filebase64sha256("${path.module}/../../../artifacts/app.zip")
   memory_size      = 128
@@ -23,6 +23,10 @@ resource "aws_lambda_function" "app" {
       STAFF_TOPIC         = aws_sns_topic.alerts["staff"].arn
       MANAGER_TOPIC       = aws_sns_topic.alerts["manager"].arn
       LAKE                = aws_s3_bucket.data["lake"].id
+      SESSION_WORKFLOW    = "arn:aws:states:${local.region}:${local.account}:stateMachine:${local.name}-sessions"
+      REPORT_WORKFLOW     = "arn:aws:states:${local.region}:${local.account}:stateMachine:${local.name}-reports"
+      ATHENA_WORKGROUP    = local.name
+      CATALOG_DATABASE    = replace(local.name, "-", "_")
     }
   }
   depends_on = [aws_iam_role_policy.lambda]
@@ -85,10 +89,10 @@ resource "aws_lambda_permission" "api" {
 }
 
 resource "aws_lambda_permission" "dashboard" {
-  for_each       = toset(["GET/dashboard/state", "POST/dashboard/readings", "POST/dashboard/ack"])
+  for_each       = local.dashboard_routes
   statement_id   = "Dashboard${replace(replace(each.key, "/", ""), "-", "")}"
   action         = "lambda:InvokeFunction"
-  function_name  = aws_lambda_function.app["dashboard"].function_name
+  function_name  = aws_lambda_function.app[each.value].function_name
   principal      = "apigateway.amazonaws.com"
   source_arn     = "${aws_apigatewayv2_api.main.execution_arn}/*/${each.key}"
   source_account = local.account

@@ -19,14 +19,27 @@ def fingerprint():
     files = []
     for directory in ("app", "simulator", "scripts", "infra"):
         for path in (ROOT / directory).rglob("*"):
-            if not path.is_file() or any(x in path.parts for x in (".terraform", "__pycache__")):
-                continue
-            if path.suffix in (".py", ".tf", ".hcl", ".toml", ".html", ".css", ".js", ".svg") or path.name.endswith(
-                ("tfvars", "tfvars.json")
+            if not path.is_file() or any(
+                x in path.parts for x in (".terraform", "__pycache__", "node_modules", "dist")
             ):
+                continue
+            if path.suffix in (
+                ".py",
+                ".tf",
+                ".hcl",
+                ".toml",
+                ".html",
+                ".css",
+                ".js",
+                ".svg",
+                ".ts",
+                ".tsx",
+                ".json",
+            ) or path.name.endswith(("tfvars", "tfvars.json")):
                 files.append(path)
     files += [ROOT / name for name in ("requirements.lock", ".terraform-version")]
     files += [ROOT / "artifacts/app.zip"] if (ROOT / "artifacts/app.zip").exists() else []
+    files += [p for p in (ROOT / "artifacts/web").rglob("*") if p.is_file()]
     for path in sorted(set(files)):
         digest.update(str(path.relative_to(ROOT)).encode())
         digest.update(path.read_bytes())

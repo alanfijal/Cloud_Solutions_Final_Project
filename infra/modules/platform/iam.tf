@@ -18,6 +18,7 @@ locals {
   async_failure = [{ actions = ["sqs:SendMessage"], resources = [aws_sqs_queue.dlq["async"].arn] }]
   permissions = {
     ingest = [
+      { actions = ["dynamodb:GetItem"], resources = [local.table_arn] },
       { actions = ["events:PutEvents"], resources = [aws_cloudwatch_event_bus.main.arn] },
       { actions = ["ssm:GetParameter"], resources = [for u in values(var.units) : "arn:aws:ssm:${local.region}:${local.account}:parameter${u.credential_parameter}"] }
     ]
@@ -26,12 +27,25 @@ locals {
     ])
     workflow = concat(local.state_access, local.async_failure)
     ack      = concat(local.state_access, local.ack_secret)
-    dashboard = [{ actions = ["dynamodb:GetItem"], resources = [local.table_arn] }, {
-      actions = ["ssm:GetParameter"], resources = concat(
-        ["arn:aws:ssm:${local.region}:${local.account}:parameter/${local.name}/dashboard", "arn:aws:ssm:${local.region}:${local.account}:parameter/${local.name}/ack"],
-        [for u in values(var.units) : "arn:aws:ssm:${local.region}:${local.account}:parameter${u.credential_parameter}"]
-      )
+    dashboard = [{ actions = ["dynamodb:GetItem", "dynamodb:PutItem"], resources = [local.table_arn] },
+      { actions = ["states:StartExecution"], resources = ["arn:aws:states:${local.region}:${local.account}:stateMachine:${local.name}-sessions"] }, {
+        actions = ["ssm:GetParameter"], resources = concat(
+          ["arn:aws:ssm:${local.region}:${local.account}:parameter/${local.name}/dashboard", "arn:aws:ssm:${local.region}:${local.account}:parameter/${local.name}/ack"],
+          [for u in values(var.units) : "arn:aws:ssm:${local.region}:${local.account}:parameter${u.credential_parameter}"]
+        )
     }]
+    sessions = concat(local.state_access, [
+      { actions = ["ssm:GetParameter"], resources = [for u in values(var.units) : "arn:aws:ssm:${local.region}:${local.account}:parameter${u.credential_parameter}"] }
+    ])
+    reports = concat(local.state_access, [
+      { actions = ["ssm:GetParameter"], resources = ["arn:aws:ssm:${local.region}:${local.account}:parameter/${local.name}/dashboard"] },
+      { actions = ["states:StartExecution"], resources = ["arn:aws:states:${local.region}:${local.account}:stateMachine:${local.name}-reports"] },
+      { actions = ["athena:StartQueryExecution", "athena:GetQueryExecution", "athena:GetQueryResults", "athena:StopQueryExecution"], resources = [aws_athena_workgroup.demo.arn] },
+      { actions = ["glue:GetDatabase", "glue:GetTable", "glue:GetPartitions"], resources = ["arn:aws:glue:${local.region}:${local.account}:catalog", "arn:aws:glue:${local.region}:${local.account}:database/${replace(local.name, "-", "_")}", "arn:aws:glue:${local.region}:${local.account}:table/${replace(local.name, "-", "_")}/events"] },
+      { actions = ["s3:ListBucket", "s3:GetBucketLocation"], resources = [aws_s3_bucket.data["lake"].arn, aws_s3_bucket.data["queries"].arn] },
+      { actions = ["s3:GetObject"], resources = ["${aws_s3_bucket.data["lake"].arn}/raw/*", "${aws_s3_bucket.data["queries"].arn}/results/*"] },
+      { actions = ["s3:PutObject", "s3:AbortMultipartUpload", "s3:ListMultipartUploadParts"], resources = ["${aws_s3_bucket.data["queries"].arn}/results/*"] }
+    ])
     lake = [
       { actions = ["sqs:ReceiveMessage", "sqs:DeleteMessage", "sqs:GetQueueAttributes"], resources = [aws_sqs_queue.main["lake"].arn] },
       { actions = ["s3:PutObject"], resources = ["${aws_s3_bucket.data["lake"].arn}/raw/*"] }

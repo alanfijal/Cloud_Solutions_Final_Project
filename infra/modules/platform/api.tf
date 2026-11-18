@@ -4,19 +4,29 @@ resource "aws_apigatewayv2_api" "main" {
 }
 
 resource "aws_apigatewayv2_integration" "lambda" {
-  for_each               = toset(["ingest", "ack", "dashboard"])
+  for_each               = toset(["ingest", "ack", "dashboard", "reports"])
   api_id                 = aws_apigatewayv2_api.main.id
   integration_type       = "AWS_PROXY"
   integration_uri        = aws_lambda_function.app[each.key].invoke_arn
   payload_format_version = "2.0"
 }
 
-resource "aws_apigatewayv2_route" "main" {
-  for_each = {
-    "POST /readings"           = "ingest", "GET /ack" = "ack", "POST /ack" = "ack",
-    "GET /dashboard/state"     = "dashboard",
-    "POST /dashboard/readings" = "dashboard", "POST /dashboard/ack" = "dashboard"
+locals {
+  dashboard_routes = {
+    "GET/dashboard/state"           = "dashboard"
+    "POST/dashboard/readings"       = "dashboard"
+    "POST/dashboard/ack"            = "dashboard"
+    "POST/dashboard/devices"        = "dashboard"
+    "POST/dashboard/incidents"      = "dashboard"
+    "POST/dashboard/sessions/start" = "dashboard"
+    "POST/dashboard/sessions/stop"  = "dashboard"
+    "POST/dashboard/reports"        = "reports"
+    "GET/dashboard/reports"         = "reports"
   }
+}
+
+resource "aws_apigatewayv2_route" "main" {
+  for_each  = merge({ "POST /readings" = "ingest", "GET /ack" = "ack", "POST /ack" = "ack" }, { for route, fn in local.dashboard_routes : replace(route, "/dashboard/", " /dashboard/") => fn })
   api_id    = aws_apigatewayv2_api.main.id
   route_key = each.key
   target    = "integrations/${aws_apigatewayv2_integration.lambda[each.value].id}"

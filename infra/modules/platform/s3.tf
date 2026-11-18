@@ -52,17 +52,13 @@ resource "aws_s3_bucket_policy" "web" {
 }
 
 resource "aws_s3_object" "web" {
-  for_each = {
-    "index.html"    = "text/html; charset=utf-8"
-    "dashboard.css" = "text/css; charset=utf-8"
-    "dashboard.js"  = "application/javascript; charset=utf-8"
-  }
+  for_each               = { for asset in fileset("${path.module}/../../../artifacts/web", "**") : asset => lookup({ html = "text/html; charset=utf-8", css = "text/css; charset=utf-8", js = "application/javascript; charset=utf-8" }, reverse(split(".", asset))[0], "application/octet-stream") }
   bucket                 = aws_s3_bucket.web.id
   key                    = each.key
-  source                 = "${path.module}/../../../app/web/${each.key}"
-  source_hash            = filesha256("${path.module}/../../../app/web/${each.key}")
+  source                 = "${path.module}/../../../artifacts/web/${each.key}"
+  source_hash            = filesha256("${path.module}/../../../artifacts/web/${each.key}")
   content_type           = each.value
-  cache_control          = each.key == "index.html" ? "public, max-age=0, must-revalidate" : "public, max-age=60, must-revalidate"
+  cache_control          = each.key == "index.html" ? "public, max-age=0, must-revalidate" : "public, max-age=300, immutable"
   server_side_encryption = "AES256"
   depends_on             = [aws_s3_bucket_versioning.web, aws_s3_bucket_server_side_encryption_configuration.web]
 }

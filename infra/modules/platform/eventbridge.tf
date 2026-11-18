@@ -39,7 +39,7 @@ resource "aws_cloudwatch_event_target" "queues" {
 resource "aws_cloudwatch_event_rule" "responses" {
   name           = "${local.name}-responses"
   event_bus_name = aws_cloudwatch_event_bus.main.name
-  event_pattern  = jsonencode({ source = ["coldchain"], "detail-type" = ["incident.opened", "notification.staff", "incident.escalated"] })
+  event_pattern  = jsonencode({ source = ["coldchain"], "detail-type" = ["incident.opened", "notification.staff", "incident.escalated", "device.offline"] })
 }
 
 resource "aws_cloudwatch_event_target" "dispatch" {

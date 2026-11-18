@@ -68,3 +68,33 @@ resource "aws_cloudwatch_metric_alarm" "workflow_failures" {
   treat_missing_data  = "notBreaching"
   alarm_actions       = [aws_sns_topic.alerts["operations"].arn]
 }
+
+resource "aws_cloudwatch_metric_alarm" "automation_errors" {
+  for_each            = toset(["sessions", "reports"])
+  alarm_name          = "${local.name}-${each.key}-errors"
+  namespace           = "AWS/Lambda"
+  metric_name         = "Errors"
+  dimensions          = { FunctionName = aws_lambda_function.app[each.key].function_name }
+  statistic           = "Sum"
+  period              = 300
+  evaluation_periods  = 1
+  comparison_operator = "GreaterThanThreshold"
+  threshold           = 0
+  treat_missing_data  = "notBreaching"
+  alarm_actions       = [aws_sns_topic.alerts["operations"].arn]
+}
+
+resource "aws_cloudwatch_metric_alarm" "automation_timeout" {
+  for_each            = { sessions = aws_sfn_state_machine.sessions.arn, reports = aws_sfn_state_machine.reports.arn }
+  alarm_name          = "${local.name}-${each.key}-timeout"
+  namespace           = "AWS/States"
+  metric_name         = "ExecutionsTimedOut"
+  dimensions          = { StateMachineArn = each.value }
+  statistic           = "Sum"
+  period              = 300
+  evaluation_periods  = 1
+  comparison_operator = "GreaterThanThreshold"
+  threshold           = 0
+  treat_missing_data  = "notBreaching"
+  alarm_actions       = [aws_sns_topic.alerts["operations"].arn]
+}

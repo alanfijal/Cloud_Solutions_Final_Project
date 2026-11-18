@@ -25,7 +25,8 @@ resource "aws_cloudfront_response_headers_policy" "web" {
   name = "${local.name}-browser-security"
   security_headers_config {
     content_security_policy {
-      content_security_policy = "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'"
+      # Recharts positions tooltips with inline styles. Scripts remain self-only.
+      content_security_policy = "default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'"
       override                = true
     }
     content_type_options { override = true }

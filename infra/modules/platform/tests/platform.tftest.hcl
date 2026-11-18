@@ -58,8 +58,21 @@ run "bounded_demo" {
     error_message = "Authenticated dashboard data must never be cached, and Authorization must reach API Gateway."
   }
   assert {
-    condition     = length(aws_s3_object.web) == 3 && length(aws_lambda_permission.dashboard) == 3 && !contains(flatten([for p in local.permissions.dashboard : p.actions]), "dynamodb:PutItem")
-    error_message = "The UI uses three static files, three scoped routes and read-only database access."
+    condition     = length(aws_s3_object.web) >= 3 && length(aws_lambda_permission.dashboard) == 9 && !contains(flatten([for p in local.permissions.dashboard : p.actions]), "athena:StartQueryExecution")
+    error_message = "The React UI must use built assets, scoped API routes and a separate analytics role."
+  }
+
+  assert {
+    condition     = jsondecode(aws_sfn_state_machine.sessions.definition).TimeoutSeconds == 660 && jsondecode(aws_sfn_state_machine.reports.definition).TimeoutSeconds == 90
+    error_message = "Session and report orchestration must have finite execution timeouts."
+  }
+  assert {
+    condition     = !contains(flatten([for p in local.permissions.sessions : p.actions]), "events:PutEvents") && contains(flatten([for p in local.permissions.reports : p.actions]), "athena:StopQueryExecution")
+    error_message = "Simulated readings must enter through the authenticated API and reports must be cancellable."
+  }
+  assert {
+    condition     = alltrue([for name, role in aws_iam_role.automation : jsondecode(role.assume_role_policy).Statement[0].Condition.StringEquals["aws:SourceAccount"] == "028718095604"])
+    error_message = "Automation role trust must retain account restrictions."
   }
 
 }
