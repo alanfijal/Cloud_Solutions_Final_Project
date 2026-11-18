@@ -26,7 +26,7 @@ locals {
 }
 
 resource "aws_apigatewayv2_route" "main" {
-  for_each  = merge({ "POST /readings" = "ingest", "GET /ack" = "ack", "POST /ack" = "ack" }, { for route, fn in local.dashboard_routes : replace(route, "/dashboard/", " /dashboard/") => fn })
+  for_each  = merge({ "POST /readings" = "ingest", "GET /ack" = "ack", "POST /ack" = "ack" }, { for route, fn in local.dashboard_routes : "${split("/", route)[0]} ${trimprefix(route, split("/", route)[0])}" => fn })
   api_id    = aws_apigatewayv2_api.main.id
   route_key = each.key
   target    = "integrations/${aws_apigatewayv2_integration.lambda[each.value].id}"

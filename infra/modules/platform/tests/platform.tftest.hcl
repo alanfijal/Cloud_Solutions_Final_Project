@@ -75,4 +75,9 @@ run "bounded_demo" {
     error_message = "Automation role trust must retain account restrictions."
   }
 
+  assert {
+    condition     = alltrue([for route in aws_apigatewayv2_route.main : can(regex("^(GET|POST) /[a-z]+", route.route_key))]) && contains(keys(aws_apigatewayv2_route.main), "GET /dashboard/state")
+    error_message = "API routes need a literal method/path separator and existing route addresses must be preserved."
+  }
+
 }
