@@ -1,7 +1,7 @@
 # Cold-Chain Monitor
 
 AWS cold-chain operations MVP for the ESADE Cloud Solutions project.
-**The original dev platform is deployed. The React MVP update is undergoing deployment verification.**
+**The React MVP is deployed in Stockholm. Local checks, GitHub CI and the bounded AWS rehearsal passed.**
 
 [Open the workspace](https://dazwahczj9j0k.cloudfront.net) and copy the operator key locally:
 
@@ -9,7 +9,7 @@ AWS cold-chain operations MVP for the ESADE Cloud Solutions project.
 pbcopy < .local/dashboard-credential-dev.txt
 ```
 
-The update adds a React/TypeScript frontend, versioned device settings, incident
+The platform includes a React/TypeScript frontend, versioned device settings, incident
 assignments and corrective actions, six realistic simulation scenarios, backend
 silence detection and on-demand historical reports. It continues to use private
 S3 and CloudFront; there is no frontend server or Amplify subscription.
@@ -39,7 +39,8 @@ Physical monitoring is armed only for the bounded session. Missing fresh reading
 for more than `max(90 seconds, 3 × expected interval)` opens one separate offline
 incident. Fresh telemetry recovers it; stopping monitoring closes it with recovery
 **unverified**. A reporting interval longer than the session may prevent silence
-detection in that session. Offline means no fresh processed telemetry; it cannot
+detection in that session. Offline alerts notify staff; manager escalation is limited to temperature incidents.
+Offline means no fresh processed telemetry; it cannot
 by itself distinguish a dead sensor from a failed network or processing path.
 
 Live UI polling pauses after ten minutes; Refresh resumes it. Charts retain the
@@ -114,7 +115,8 @@ Unchanged incident snapshots are not re-written on every reading.
 
 Session/report startup uses a committed lease and a stable Standard execution
 name/input. A caller failure between those operations can delay startup; retries
-reuse the name, and abandoned leases expire or are recovered. Each simulated observation time is persisted before HTTP submission. Retried
+reuse the name, and abandoned leases expire or are recovered. Interrupted multi-unit
+startup can require a stop/retry or waiting for the lease to expire. Each simulated observation time is persisted before HTTP submission. Retried
 ticks preserve reading bytes and IDs, while task time is deducted from waits
 without catch-up bursts. Slow processing can reduce the number sent before the deadline. Progress commits after ingestion, so a crash
 can resend a reading, which the detector deduplicates. Stops disable monitoring
@@ -168,7 +170,7 @@ Run `init -backend=false -lockfile=readonly` and `validate` in each Terraform ro
 The browser check serves the actual React production build with a local mocked API.
 It tests authentication, charts, stable retries, incident actions, device editing,
 sessions, reports/CSV, responsive views, polling deadlines and disconnect clearing.
-**97 Python tests**, mocked Terraform contracts, four root validations and the
+**101 Python tests**, mocked Terraform contracts, four root validations and the
 React desktop/mobile browser checks passed locally. Screenshots/evidence stay
 ignored in `.local/`. Local checks do not prove AWS
 integration or physical sensor operation.
@@ -190,14 +192,31 @@ and five lifecycle events, scanning 53,684 bytes. The original dashboard also
 passed a ten-reading browser smoke test, including acknowledgement/recovery and
 mobile/chart/CSV. Anonymous API access returned 401; direct S3 returned 403. Queues
 and all five DLQs drained. Fault injection/redrive was tested locally, not on AWS.
-These results do **not** verify the new MVP's cloud integrations before deployment.
+MVP verification, 18 November 2026: **24 distinct readings** across compressor
+and disconnection runs plus one gateway protocol measurement. Temperature escalation,
+acknowledgement after the incident workflow had succeeded, recovery, offline
+acknowledgement and fresh-data reconnection passed. A reversible device-name edit
+was verified and restored. The report returned lake aggregates, scanning **348,984
+bytes**. The local monitor hit a DNS error; the bounded backend completed its run,
+and verification continued from its recorded state without restarting that load.
+New-run email delivery was not manually confirmed; notification publication and
+incident state were verified. Queues and all five DLQs drained. The deployed React
+app passed read-only browser checks for all five views, charts, mobile, CSP,
+authentication and disconnect. Physical sensor hardware remains untested.
+
+[CI for the deployed commit](https://github.com/alanfijal/Cloud_Solutions_Final_Project/actions/runs/44311642034)
+and [delivery artifacts](https://github.com/alanfijal/Cloud_Solutions_Final_Project/actions/runs/44312666404)
+passed; the Linux-built Lambda ZIP and all React assets matched the locally
+deployed bytes. Live evidence remains private in `.local/`.
 
 ## Account, budget and cost
 
 Account **028718095604**, primary region **eu-north-1**, temporary browser profile
 `coldchain-console`. Helpers verify STS, reject root/account mismatches and pass
 credentials in memory. No static keys or runtime-secret values enter Git or
-Terraform state. `COLDCHAIN_PROFILE` can select another authorized temporary profile.
+Terraform state. IAM policies use named project resources; X-Ray and DynamoDB
+ListStreams require resource wildcards. Managed SNS key access is constrained by
+service, account and topic encryption context. `COLDCHAIN_PROFILE` can select another authorized temporary profile.
 
 Read-only evidence on **18 November 2026**: ACTIVE Free plan, **$160 reported
 remaining credits**, plan expiry **17 May 2027**, account Lambda concurrency 400.
@@ -247,10 +266,10 @@ SQS's maximum-concurrency setting prevents its lowest-idle-poller optimization;
 CloudFront is global; origins remain in Stockholm. No flat-rate plan, custom domain,
 edge function, WAF subscription or always-on compute is enabled.
 
-The existing deployment has **7 bootstrap + 124 application/configuration resources**
-and seven runtime SecureStrings. The update adds two Lambda functions, two Standard
-workflows, scoped roles/routes and four alarms, plus built React asset changes;
-review the saved Terraform plan for the exact inventory. Existing account-wide
+The deployment has **7 bootstrap + 156 application/configuration resources** and
+seven runtime SecureStrings: ten Lambda functions, three Standard workflows and
+thirteen alarms. The MVP apply added 34 resources/configurations, updated thirteen
+and removed only the two legacy frontend objects. Existing account-wide
 actual-spend notifications at $5/$10/$20/$25 and forecast $25 cover **17 Nov–17 Dec**,
 exclude credits/refunds and are verified. They are delayed warnings. Budgets uses
 us-east-1; IAM/CloudFront are global. State and plans remain private.
@@ -342,7 +361,7 @@ The bounded CLI demonstration remains available:
 After explicit live-test approval, `scripts/smoke_mvp.py --confirm-account 028718095604 --confirm-live`
 runs two bounded sessions (at most thirty distinct readings total) and one historical
 report, exercising escalation/late acknowledgement and offline/reconnection. It sends
-real emails and retains private evidence. It has not been run for this update yet.
+real emails and retains private evidence. The 18 November run passed; its local DNS interruption and continuation are recorded above.
 
 Ctrl-C stops the CLI. In the deployed UI use Stop session for backend producers.
 A reviewed Terraform pause sets `ingestion_enabled=false` and
@@ -352,7 +371,7 @@ current incident state. Inspect failures before any replay; never redrive blindl
 
 ## Cleanup
 
-Logs retain seven days; raw data fourteen; query results seven; noncurrent S3
+Logs retain seven days; raw data fourteen; query results seven; application noncurrent S3
 versions seven; incomplete multipart uploads one day. DynamoDB dedup/outbox/incident
 records have thirty-day TTL. Bounded unit settings/watermarks/recent snapshots
 persist until application cleanup. Native account audit history is reused;
