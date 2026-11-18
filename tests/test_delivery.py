@@ -27,7 +27,7 @@ def test_terraform_credentials_refresh_without_persisting_keys(tmp_path, monkeyp
 
     from scripts.aws_local import terraform_env
 
-    source = tmp_path / "original config"
+    source = tmp_path / "original config $(must-not-execute)"
     source.write_text("# original browser-login profile\n")
     count = tmp_path / "refresh-count"
     fake_cli = tmp_path / "fake aws"

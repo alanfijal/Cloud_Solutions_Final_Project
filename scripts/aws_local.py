@@ -3,6 +3,7 @@
 import json
 import os
 import pathlib
+import shlex
 import shutil
 import subprocess
 
@@ -91,13 +92,13 @@ def terraform_env(config_path=None):
         "--format",
         "process",
     ]
-    if any(not value or any(c in value for c in '\\"\n\r') for value in command):
+    if any(not value or any(c in value for c in "\x00\n\r") for value in command):
         raise ValueError("AWS CLI/env must be installed, with paths and profile names safe for a credential_process")
     config_path.parent.mkdir(exist_ok=True)
     with open(os.open(config_path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600), "w") as config:
         os.chmod(config_path, 0o600)
         config.write("[profile coldchain-terraform]\nregion = " + REGION + "\ncredential_process = ")
-        config.write(" ".join('"' + value + '"' for value in command) + "\n")
+        config.write(shlex.join(command) + "\n")
     env = os.environ.copy()
     for key in (
         "AWS_ACCESS_KEY_ID",
