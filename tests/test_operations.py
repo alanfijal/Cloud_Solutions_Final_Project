@@ -214,7 +214,7 @@ def test_tick_http_retry_keeps_stable_reading_bytes_and_does_not_double_count(st
 
     def fail_after_acceptance(key, change):
         nonlocal failed
-        if key == sessions.ACTIVE and not failed:
+        if key == sessions.ACTIVE and not failed and captured:
             failed = True
             raise RuntimeError("crash before progress commit")
         return original(key, change)
@@ -491,3 +491,23 @@ def test_completed_report_id_releases_the_lease_with_an_explicit_error(store):
         with pytest.raises(Conflict, match="already used"):
             reports.start({"request_id": "old", "units": ["unit-1"], "window": "1h"}, store, 100)
     assert store.get(reports.SLOT)[0]["status"] == "failed"
+
+
+def test_slow_session_uses_actual_observation_time_and_retries_preserve_it(store):
+    from datetime import datetime, timezone
+
+    with patch.object(sessions, "client", return_value=states()):
+        sessions.start(session_body(), store, 100)
+    with (
+        patch.object(sessions, "Store", return_value=store),
+        patch.object(sessions, "secret", return_value="device"),
+        patch.object(dashboard, "forward", side_effect=[{"statusCode": 502}, {"statusCode": 202}]) as forward,
+    ):
+        with patch.object(sessions.time, "time", return_value=300):
+            with pytest.raises(RuntimeError):
+                sessions.tick({"session_id": "session-one", "step": 0}, None)
+        with patch.object(sessions.time, "time", return_value=310):
+            sessions.tick({"session_id": "session-one", "step": 0}, None)
+    first, second = [json.loads(call.args[1]) for call in forward.call_args_list]
+    assert first == second
+    assert first["observed_at"] == datetime.fromtimestamp(300, timezone.utc).isoformat().replace("+00:00", "Z")

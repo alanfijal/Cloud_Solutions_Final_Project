@@ -204,6 +204,7 @@ def tick(payload, context):
     if step < session["processed_steps"]:
         return {"session_id": sid, "step": session["processed_steps"], "done": False, "wait_s": session["spacing_s"]}
     submitted = skipped = 0
+    observed = now
     if session["mode"] == "simulation":
         unit = session["units"][step % len(session["units"])]
         cfg = session["configurations"][unit]
@@ -214,8 +215,23 @@ def tick(payload, context):
         if value is None:
             skipped = 1
         else:
-            # Fixed observation time makes an HTTP/Task retry byte-for-byte stable.
-            observed = session["started_at"] + step * session["spacing_s"]
+            # Persist the actual first-attempt observation time. A slow workflow
+            # must not backdate readings; a retried tick must not invent a time.
+            def reserve(old):
+                if old["session_id"] != sid or old["status"] not in ("starting", "running") or now >= old["deadline"]:
+                    return old
+                if old.get("pending_step") == step:
+                    return old
+                return {**old, "pending_step": step, "pending_observed_at": now}
+
+            reserved = store.mutate(ACTIVE, reserve)
+            if (
+                reserved["session_id"] != sid
+                or reserved["status"] not in ("starting", "running")
+                or now >= reserved["deadline"]
+            ):
+                return {"session_id": sid, "step": step, "done": False, "wait_s": 1}
+            observed = reserved["pending_observed_at"]
             reading = {
                 "reading_id": f"sim_{sid}_{step}",
                 "unit_id": unit,
@@ -252,4 +268,7 @@ def tick(payload, context):
 
     store.mutate(ACTIVE, progress)
     log("session_tick", session_id=sid, step=step, submitted=submitted, skipped=skipped)
-    return {"session_id": sid, "step": step + 1, "done": False, "wait_s": session["spacing_s"]}
+    # Deduct task time without producing catch-up bursts after a long delay.
+    next_due = observed + session["spacing_s"]
+    wait = max(1, min(session["spacing_s"], math.ceil(next_due - time.time())))
+    return {"session_id": sid, "step": step + 1, "done": False, "wait_s": wait}

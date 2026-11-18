@@ -114,8 +114,9 @@ Unchanged incident snapshots are not re-written on every reading.
 
 Session/report startup uses a committed lease and a stable Standard execution
 name/input. A caller failure between those operations can delay startup; retries
-reuse the name, and abandoned leases expire or are recovered. Retried simulation
-ticks preserve reading bytes and IDs. Progress commits after ingestion, so a crash
+reuse the name, and abandoned leases expire or are recovered. Each simulated observation time is persisted before HTTP submission. Retried
+ticks preserve reading bytes and IDs, while task time is deducted from waits
+without catch-up bursts. Slow processing can reduce the number sent before the deadline. Progress commits after ingestion, so a crash
 can resend a reading, which the detector deduplicates. Stops disable monitoring
 immediately; lease checks protect newer sessions from delayed older cleanup.
 
@@ -167,7 +168,7 @@ Run `init -backend=false -lockfile=readonly` and `validate` in each Terraform ro
 The browser check serves the actual React production build with a local mocked API.
 It tests authentication, charts, stable retries, incident actions, device editing,
 sessions, reports/CSV, responsive views, polling deadlines and disconnect clearing.
-**96 Python tests**, mocked Terraform contracts, four root validations and the
+**97 Python tests**, mocked Terraform contracts, four root validations and the
 React desktop/mobile browser checks passed locally. Screenshots/evidence stay
 ignored in `.local/`. Local checks do not prove AWS
 integration or physical sensor operation.
@@ -214,10 +215,10 @@ KMS operations, query scans and European data transfer. No custom metrics are ad
 
 | Updated MVP workload | Estimated gross USD before credits/free allowances |
 |---|---:|
-| One 100-reading demo + report, one hour deployed | 0.07 |
+| One 100-reading demo + report, one hour deployed | 0.08 |
 | Thirty days idle | 1.82 |
-| Thirty days, thirty bounded sessions + thirty reports, 2 GB CDN/20k HTTPS requests | 3.90 |
-| Thirty days of repeated starts at daily limits: 300 sessions/30k readings + 600 reports, 20 GB CDN/200k HTTPS requests | 23.55 |
+| Thirty days, thirty bounded sessions + thirty reports, 2 GB CDN/20k HTTPS requests | 4.01 |
+| Thirty days of repeated starts at daily limits: 300 sessions/30k readings + 600 reports, 20 GB CDN/200k HTTPS requests | 24.65 |
 
 Allow **$6 for a month of light use**, including a planning buffer and a few Cost
 Explorer calls; preserve the **$25 total project target and $50 credit reserve**.

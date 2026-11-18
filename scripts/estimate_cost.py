@@ -68,7 +68,9 @@ def estimate(sessions, reports, months, transfer_gb, cf_requests, unit_kib=192):
     # Ingestion + detector + five-unit offline checks on each tick + 60 UI polls.
     reads = sessions * (100 * unit_read_ru * 2 + 101 * (5 * unit_read_ru + 2) + 60 * (5 * unit_read_ru + 2) + 300)
     # UNIT transaction + READ dedup; only changed incidents are re-written.
-    writes = readings * (2 * unit_kib + 2) + sessions * 1000 + reports * 200
+    # Include unit arming/disarming, persisted observation reservations, progress,
+    # acknowledgement and a small number of operational activity updates.
+    writes = readings * (2 * unit_kib + 2) + sessions * 6000 + reports * 200
     transition_count = sessions * (303 + 160) + reports * 96
     events = sessions * 120
     query_scan_tb = reports * D(10 * 1024 * 1024) / D(10**12)
