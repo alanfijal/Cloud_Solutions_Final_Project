@@ -109,3 +109,63 @@ def test_dirty_source_before_or_after_plan_refuses_apply(tmp_path, planned_clean
     meta["clean_worktree"] = planned_clean
     with pytest.raises(ValueError, match="Commit source changes"):
         verify_saved_plan(meta, path, "revision", "source", ACCOUNT, False, 101, clean=current_clean)
+
+
+def test_live_rehearsal_retries_network_failure_without_changing_request_id():
+    from unittest.mock import Mock
+    from urllib.error import URLError
+
+    from scripts.smoke_mvp import API
+
+    result = Mock()
+    result.__enter__ = Mock(return_value=result)
+    result.__exit__ = Mock(return_value=False)
+    result.read.return_value = b'{"status":"running"}'
+    api = API("https://dazwahczj9j0k.cloudfront.net", "local-test-only")
+    body = {"request_id": "same-id"}
+    with (
+        patch("scripts.smoke_mvp.urlopen", side_effect=[URLError("dns"), result]) as send,
+        patch("scripts.smoke_mvp.time.sleep"),
+    ):
+        assert api.call("sessions/start", body)["status"] == "running"
+    assert send.call_args_list[0].args[0].data == send.call_args_list[1].args[0].data
+
+
+def test_live_rehearsal_stops_retrying_after_three_network_failures():
+    from urllib.error import URLError
+
+    from scripts.smoke_mvp import API
+
+    api = API("https://dazwahczj9j0k.cloudfront.net", "local-test-only")
+    with patch("scripts.smoke_mvp.urlopen", side_effect=URLError("dns")) as send, patch("scripts.smoke_mvp.time.sleep"):
+        with pytest.raises(RuntimeError, match="Local network"):
+            api.call("state")
+    assert send.call_count == 3
+
+
+def test_gateway_export_contains_only_one_key_and_refuses_overwrite(tmp_path, monkeypatch):
+    import json
+
+    from scripts import export_device
+
+    monkeypatch.chdir(tmp_path)
+    folder = tmp_path / ".local"
+    folder.mkdir()
+    source, target = folder / "source.json", folder / "one.json"
+    source.write_text(json.dumps({"unit-1": "first-test-key", "unit-2": "second-test-key"}))
+    monkeypatch.setattr("sys.argv", ["export", "--unit", "unit-1", "--source", str(source), "--output", str(target)])
+    export_device.main()
+    assert json.loads(target.read_text()) == {"unit-1": "first-test-key"}
+    assert target.stat().st_mode & 0o777 == 0o600
+    with pytest.raises(FileExistsError):
+        export_device.main()
+
+
+def test_gateway_export_refuses_a_tracked_location(tmp_path, monkeypatch):
+    from scripts import export_device
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr("sys.argv", ["export", "--unit", "unit-1", "--output", str(tmp_path / "leak.json")])
+    with pytest.raises(SystemExit):
+        export_device.main()
+    assert not (tmp_path / "leak.json").exists()

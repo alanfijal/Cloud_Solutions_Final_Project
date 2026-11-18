@@ -9,7 +9,7 @@ import json
 import time
 import uuid
 from pathlib import Path
-from urllib.error import HTTPError
+from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
 from aws_local import ACCOUNT, identity
@@ -37,6 +37,12 @@ class API:
             except HTTPError as exc:
                 if exc.code not in (429, 500, 502, 503, 504) or attempt == 2:
                     raise RuntimeError(f"Dashboard request failed: {exc.code}, {path}") from None
+                time.sleep(1 + attempt)
+            except (URLError, TimeoutError):
+                if attempt == 2:
+                    raise RuntimeError(
+                        "Local network unavailable; preserve the session ID and reconnect to inspect its bounded run"
+                    ) from None
                 time.sleep(1 + attempt)
         raise RuntimeError("HTTP retry limit reached")
 
