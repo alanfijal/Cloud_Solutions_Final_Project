@@ -32,13 +32,24 @@ class Store:
             if reading_id and self.get(f"READ#{unit}#{reading_id}")[0] is not None:
                 return "duplicate"
             state, events, result = change(old)
+            if not events and reading_id is None and state == old:
+                return result
+            recent = {i["incident_id"]: i for i in state.get("recent_incidents", [])}
+            for name in ("incident", "offline_incident"):
+                if state.get(name):
+                    recent[state[name]["incident_id"]] = state[name]
+            state["recent_incidents"] = sorted(recent.values(), key=lambda i: i["opened_at"])[-5:]
+            previous = {i["incident_id"]: i for i in (old or {}).get("recent_incidents", [])}
+            for name in ("incident", "offline_incident"):
+                if (old or {}).get(name):
+                    previous[old[name]["incident_id"]] = old[name]
             writes = [
                 {
                     "Put": {
                         "TableName": self.table,
                         "Item": {
                             "pk": {"S": "UNIT#" + unit},
-                            "payload": {"S": json.dumps(state)},
+                            "payload": {"S": json.dumps(state, ensure_ascii=False)},
                             "version": {"N": str(version + 1)},
                         },
                         "ConditionExpression": "attribute_not_exists(pk)" if version == 0 else "#v = :v",
@@ -68,8 +79,9 @@ class Store:
                         }
                     }
                 )
-            if state.get("incident"):
-                incident = state["incident"]
+            for incident in state["recent_incidents"]:
+                if previous.get(incident["incident_id"]) == incident:
+                    continue
                 writes.append(
                     {
                         "Put": {
@@ -107,3 +119,29 @@ class Store:
                     raise
                 time.sleep(random.uniform(0, 0.02 * 2**attempt))
         raise RuntimeError("optimistic update exhausted; retry message")
+
+    def mutate(self, key, change):
+        """CAS for bounded workspace leases and report slots; never scan the table."""
+        for attempt in range(5):
+            old, version = self.get(key)
+            value = change(old)
+            if old == value:
+                return value
+            put = {
+                "TableName": self.table,
+                "Item": {"pk": {"S": key}, "payload": {"S": json.dumps(value)}, "version": {"N": str(version + 1)}},
+                "ConditionExpression": "attribute_not_exists(pk)" if not version else "#v = :v",
+            }
+            if version:
+                put.update(
+                    ExpressionAttributeNames={"#v": "version"}, ExpressionAttributeValues={":v": {"N": str(version)}}
+                )
+            try:
+                self.db.transact_write_items(TransactItems=[{"Put": put}])
+                return value
+            except self.db.exceptions.TransactionCanceledException as exc:
+                reasons = exc.response.get("CancellationReasons", [])
+                if any(r.get("Code") not in ("None", "ConditionalCheckFailed", "TransactionConflict") for r in reasons):
+                    raise
+                time.sleep(random.uniform(0, 0.02 * 2**attempt))
+        raise RuntimeError("Workspace changed concurrently; retry the same request ID")

@@ -7,10 +7,13 @@ import pytest
 
 from app import dashboard
 from app.domain import apply_reading, validate
+from app.store import Store
+from tests.test_store_integration import Database
 
 
 @pytest.fixture(autouse=True)
 def config(monkeypatch):
+    monkeypatch.setattr(dashboard, "Store", lambda: Store(Database(), "test"))
     monkeypatch.setenv("DASHBOARD_PARAMETER", "/coldchain-dev/dashboard")
     monkeypatch.setenv("ACK_PARAMETER", "/coldchain-dev/ack")
     monkeypatch.setenv(
@@ -61,13 +64,16 @@ def test_dashboard_rejects_missing_and_invalid_auth_before_data_access():
 def test_snapshot_reads_only_configured_units_and_never_returns_credentials():
     state = {"temperature": 4, "last_time": "2026-11-17T12:00:00Z", "history": [["2026-11-17T12:00:00Z", 4]] * 25}
     with patch.object(dashboard, "secret", return_value="operator"), patch.object(dashboard, "Store") as store:
-        store.return_value.get.return_value = (state, 1)
+        store.return_value.get.side_effect = lambda key: (state, 1) if key.startswith("UNIT#") else (None, 0)
         result = dashboard.handler(event(), None)
         body = json.loads(result["body"])
         assert result["statusCode"] == 200 and len(body["units"]) == 5
         assert len(body["units"][0]["history"]) == 20
-        assert store.return_value.get.call_count == 5
-        assert {c.args[0] for c in store.return_value.get.call_args_list} == {f"UNIT#unit-{i}" for i in range(1, 6)}
+        assert store.return_value.get.call_count == 7
+        assert {c.args[0] for c in store.return_value.get.call_args_list} == {f"UNIT#unit-{i}" for i in range(1, 6)} | {
+            "SESSION#active",
+            "REPORT#active",
+        }
         assert "credential_parameter" not in result["body"] and "operator" not in result["body"]
         assert result["headers"]["cache-control"] == "no-store"
 
@@ -92,9 +98,9 @@ def test_browser_submission_keeps_reading_id_and_uses_real_ingestion_route():
 )
 def test_browser_cannot_bypass_reading_validation_or_unit_binding(change):
     with patch.object(dashboard, "secret", return_value="operator"), patch.object(dashboard, "forward") as forward:
-        assert (
-            dashboard.handler(event("/dashboard/readings", "POST", dict(sample(), **change)), None)["statusCode"] == 400
-        )
+        assert dashboard.handler(event("/dashboard/readings", "POST", dict(sample(), **change)), None)[
+            "statusCode"
+        ] in (400, 409)
         forward.assert_not_called()
 
 

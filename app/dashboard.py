@@ -1,4 +1,4 @@
-"""Same-origin operator dashboard. Device and acknowledgement credentials stay server-side."""
+"""Authenticated operational API; sensor and incident credentials remain server-side."""
 
 import base64
 import hmac
@@ -10,12 +10,12 @@ from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 
 from app.domain import credential, validate
+from app.fleet import Conflict, annotate, configuration, configure, find_incident
 from app.handlers import response, secret
 from app.store import Store
 
 
 def forward(path, body, headers):
-    """Use the real ingestion/acknowledgement routes; do not bypass the hot path."""
     try:
         with urlopen(Request(os.environ["API_URL"] + path, data=body, headers=headers), timeout=12) as result:
             return response(result.status, json.loads(result.read()))
@@ -26,34 +26,54 @@ def forward(path, body, headers):
 
 
 def snapshot(configs):
-    # Exactly five configured units; no scan, unbounded history query or recurring producer.
-    store = Store()
+    from app.reports import SLOT
+    from app.reports import public as report_public
+    from app.sessions import ACTIVE
+    from app.sessions import public as session_public
+
+    store, now = Store(), int(time.time())
     units = []
-    for unit_id, config in configs.items():
+    for unit_id, base in configs.items():
         state, _ = store.get("UNIT#" + unit_id)
         state = state or {}
+        config = configuration(unit_id, base, state)
         incidents = {i["incident_id"]: i for i in state.get("recent_incidents", [])}
-        if state.get("incident"):
-            incidents[state["incident"]["incident_id"]] = state["incident"]
+        for key in ("incident", "offline_incident"):
+            if state.get(key):
+                incidents[state[key]["incident_id"]] = state[key]
+        monitor = state.get("monitor", {})
+        monitored = now < monitor.get("until", 0)
         units.append(
             {
                 "unit_id": unit_id,
-                "site_id": config["site_id"],
-                "threshold": config["threshold"],
-                "direction": config["direction"],
+                **config,
                 "temperature": state.get("temperature"),
-                "observed_at": state.get("last_time") or None,
+                "observed_at": (state.get("last_time") or None) if state.get("temperature") is not None else None,
                 "consecutive": state.get("count", 0),
                 "history": state.get("history", [])[-20:],
                 "incident": state.get("incident"),
+                "offline_incident": state.get("offline_incident"),
                 "incidents": sorted(incidents.values(), key=lambda i: i["opened_at"], reverse=True)[:5],
+                "monitoring": monitored,
+                "monitor_until": monitor.get("until"),
+                "connection": "disabled"
+                if not config["enabled"]
+                else "offline"
+                if monitored and state.get("offline_incident", {}).get("status") == "open"
+                else "online"
+                if now - state.get("last_received_at", 0) <= max(90, config["interval_s"] * 3)
+                else "stale",
             }
         )
     return {
         "units": units,
-        "server_time": int(time.time()),
+        "server_time": now,
         "history_limit": 20,
         "ingestion_enabled": os.environ.get("INGESTION_ENABLED", "true") == "true",
+        "session": session_public(store.get(ACTIVE)[0], now),
+        "report": report_public(store.get(SLOT)[0]),
+        "device_endpoint": os.environ.get("API_URL", ""),
+        "limits": {"device_slots": 5, "session_seconds": 600, "session_readings": 100, "reports_per_day": 20},
     }
 
 
@@ -70,7 +90,14 @@ def handler(event, context):
     try:
         if method == "GET" and path == "/dashboard/state":
             return response(200, snapshot(configs))
-        if method != "POST" or path not in ("/dashboard/readings", "/dashboard/ack"):
+        if method != "POST" or path not in (
+            "/dashboard/readings",
+            "/dashboard/ack",
+            "/dashboard/devices",
+            "/dashboard/incidents",
+            "/dashboard/sessions/start",
+            "/dashboard/sessions/stop",
+        ):
             return response(404, {"error": "Not found"})
         raw = event.get("body", "")
         if len(raw) > 8192:
@@ -78,35 +105,61 @@ def handler(event, context):
         if event.get("isBase64Encoded"):
             raw = base64.b64decode(raw).decode()
         body = json.loads(raw)
-        if method == "POST" and path == "/dashboard/readings":
+        if not isinstance(body, dict):
+            raise ValueError("Expected a JSON object")
+        if path == "/dashboard/sessions/start":
+            from app.sessions import start
+
+            return response(202, start(body))
+        if path == "/dashboard/sessions/stop":
+            from app.sessions import stop
+
+            if set(body) != {"session_id"}:
+                raise ValueError("Provide the current session ID")
+            return response(202, stop(body["session_id"]))
+        unit_id = body.get("unit_id")
+        if unit_id not in configs:
+            raise ValueError("Unknown sensor")
+        if path == "/dashboard/devices":
+            result = Store().update(
+                unit_id, lambda old: configure(old, unit_id, configs[unit_id], body, int(time.time()))
+            )
+            return response(200, {"status": result})
+        if path == "/dashboard/incidents":
+            result = Store().update(unit_id, lambda old: annotate(old, body, int(time.time())))
+            return response(200, {"status": result})
+        state, _ = Store().get("UNIT#" + unit_id)
+        if path == "/dashboard/readings":
             reading = validate(body, time.time())
-            config = configs.get(reading["unit_id"])
-            if not config or reading["site_id"] != config["site_id"]:
-                return response(400, {"error": "Unknown sensor"})
+            config = configuration(unit_id, configs[unit_id], state)
+            if not config["enabled"] or config["source"] != "simulation" or reading["site_id"] != config["site_id"]:
+                raise Conflict("Manual simulation requires an enabled simulation device with the correct site")
+            if state and state.get("monitor", {}).get("until", 0) > time.time():
+                raise Conflict("Stop the active session before sending manual readings")
             return forward(
                 "/readings",
                 json.dumps(reading).encode(),
                 {
                     "Content-Type": "application/json",
-                    "Authorization": "Bearer " + secret(config["credential_parameter"]),
+                    "X-Coldchain-Source": "simulation",
+                    "Authorization": "Bearer " + secret(configs[unit_id]["credential_parameter"]),
                 },
             )
-        if method == "POST" and path == "/dashboard/ack":
-            if set(body) != {"unit_id", "incident_id"} or body["unit_id"] not in configs:
-                raise ValueError("Invalid incident")
-            state, _ = Store().get("UNIT#" + body["unit_id"])
-            incident = (state or {}).get("incident")
-            if not incident or incident["incident_id"] != body["incident_id"]:
-                return response(409, {"error": "This incident is no longer current"})
-            if incident["status"] == "resolved":
-                return response(409, {"error": "This incident has recovered"})
-            if incident["expires_at"] <= time.time():
-                return response(403, {"error": "The incident acknowledgement window has expired"})
-            params = {"unit": body["unit_id"], "incident": body["incident_id"], "expiry": incident["expires_at"]}
-            params["signature"] = credential(
-                secret(os.environ["ACK_PARAMETER"]), params["unit"], params["incident"], params["expiry"]
-            )
-            return forward("/ack", urlencode(params).encode(), {"Content-Type": "application/x-www-form-urlencoded"})
-        return response(404, {"error": "Not found"})
-    except (ValueError, TypeError, KeyError):
+        if set(body) != {"unit_id", "incident_id"}:
+            raise ValueError("Invalid incident")
+        incident = find_incident(state, body["incident_id"])
+        if not incident or incident["status"] in ("resolved", "closed"):
+            raise Conflict("This incident has recovered or is no longer current")
+        if incident["expires_at"] <= time.time():
+            return response(403, {"error": "The incident acknowledgement window has expired"})
+        params = {"unit": unit_id, "incident": incident["incident_id"], "expiry": incident["expires_at"]}
+        params["signature"] = credential(
+            secret(os.environ["ACK_PARAMETER"]), params["unit"], params["incident"], params["expiry"]
+        )
+        return forward("/ack", urlencode(params).encode(), {"Content-Type": "application/x-www-form-urlencoded"})
+    except Conflict as exc:
+        return response(409, {"error": str(exc)})
+    except ValueError as exc:
+        return response(400, {"error": str(exc) or "Invalid dashboard request"})
+    except (TypeError, KeyError):
         return response(400, {"error": "Invalid dashboard request"})

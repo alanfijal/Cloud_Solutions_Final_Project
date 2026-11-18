@@ -41,17 +41,34 @@ def validate(data, now=None):
 
 def apply_reading(old, reading, config, now):
     """Consecutive means timestamp-increasing accepted readings, <=90 s apart."""
-    state = copy.deepcopy(old or {"count": 0, "last_time": "", "incident": None})
-    if reading["observed_at"] <= state["last_time"]:
+    state = copy.deepcopy(old or {})
+    if config.get("revision", 0) < state.get("settings_revision", 0):
         return state, []
+    if reading["observed_at"] <= state.get("last_time", ""):
+        return state, []
+    state = {"count": 0, "last_time": "", "incident": None, **state}
     events = []
     if state["last_time"]:
         gap = (
             datetime.fromisoformat(reading["observed_at"]) - datetime.fromisoformat(state["last_time"])
         ).total_seconds()
-        if gap > 90:
+        if gap > max(90, config.get("interval_s", 30) * 3):
             state["count"] = 0
+    if state.get("last_configuration", {}).get("revision") != config.get("revision"):
+        state["count"] = 0
     state["last_time"] = reading["observed_at"]
+    state["last_received_at"] = min(now, int(datetime.fromisoformat(reading["observed_at"]).timestamp()))
+    state["last_configuration"] = {
+        k: config[k] for k in ("threshold", "direction", "source", "revision") if k in config
+    }
+    offline = state.get("offline_incident")
+    if (
+        offline
+        and offline["status"] == "open"
+        and now - state["last_received_at"] <= max(90, config.get("interval_s", 30) * 3)
+    ):
+        offline.update(status="resolved", resolved_at=now, resolution="fresh_reading")
+        events.append(event("device.online", offline))
     state["temperature"] = reading["temperature"]
     state["history"] = (state.get("history", []) + [[reading["observed_at"], reading["temperature"]]])[-20:]
     high = reading["temperature"] > config["threshold"]
@@ -63,6 +80,8 @@ def apply_reading(old, reading, config, now):
         state["incident"] = {
             "incident_id": iid,
             "unit_id": reading["unit_id"],
+            "kind": "temperature",
+            "configuration": {k: config[k] for k in ("threshold", "direction", "revision") if k in config},
             "status": "open",
             "acknowledged": False,
             "opened_at": now,
@@ -90,36 +109,50 @@ def event(kind, incident, discriminator=""):
         "incident_id": incident["incident_id"],
         "unit_id": incident["unit_id"],
         "status": incident["status"],
+        "kind": incident.get("kind", "temperature"),
+        "occurred_at": incident.get("resolved_at")
+        if kind in ("incident.resolved", "device.online")
+        else incident.get("acknowledged_at")
+        if kind == "incident.acknowledged"
+        else incident["opened_at"] + 120
+        if kind == "incident.escalated"
+        else incident["opened_at"],
     }
 
 
 def transition(old, incident_id, action, now):
     state = copy.deepcopy(old)
     incident = state.get("incident")
+    if (not incident or incident["incident_id"] != incident_id) and state.get("offline_incident", {}).get(
+        "incident_id"
+    ) == incident_id:
+        incident = state["offline_incident"]
     if not incident or incident["incident_id"] != incident_id:
         return state, [], "superseded"
     if action == "failure":
         if incident.get("workflow_outcome") == "failed":
             return state, [], "failed"
         incident["workflow_outcome"] = "failed"
-        return state, [event("workflow.failed", incident)], "failed"
+        return state, [{**event("workflow.failed", incident), "occurred_at": now}], "failed"
     if action not in ("staff", "check", "ack"):
         raise ValueError("unknown incident action")
     if action == "ack":
         if now >= incident["expires_at"]:
             raise ValueError("expired credential")
-        if incident["status"] != "resolved" and not incident["acknowledged"]:
+        if incident["status"] not in ("resolved", "closed") and not incident["acknowledged"]:
             incident["acknowledged"] = True
             incident["acknowledged_at"] = now
-            return state, [event("incident.acknowledged", incident)], "acknowledged"
+            return state, [{**event("incident.acknowledged", incident), "occurred_at": now}], "acknowledged"
     elif incident["status"] != "resolved" and not incident["acknowledged"]:
         if action == "staff" and not incident["staff_requested"]:
             incident["staff_requested"] = True
-            return state, [event("notification.staff", incident)], "waiting"
+            incident["staff_requested_at"] = now
+            return state, [{**event("notification.staff", incident), "occurred_at": now}], "waiting"
         if action == "check" and now >= incident["opened_at"] + 120 and not incident["manager_requested"]:
             incident["manager_requested"] = True
+            incident["escalated_at"] = now
             incident["status"] = "escalated"
-            return state, [event("incident.escalated", incident)], "escalated"
+            return state, [{**event("incident.escalated", incident), "occurred_at": now}], "escalated"
         if incident["manager_requested"]:
             return state, [], "escalated"
         return state, [], "waiting"

@@ -3,6 +3,8 @@ from unittest.mock import Mock, patch
 
 from app import handlers
 from app.domain import credential
+from app.store import Store
+from tests.test_store_integration import Database
 
 
 def test_partial_batch_failure():
@@ -40,7 +42,11 @@ def test_auth_and_invalid_input(monkeypatch):
         "temperature": 4,
         "observed_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
     }
-    with patch.object(handlers, "secret", return_value="secret"), patch.object(handlers, "publish") as publish:
+    with (
+        patch.object(handlers, "Store", return_value=Store(Database(), "test")),
+        patch.object(handlers, "secret", return_value="secret"),
+        patch.object(handlers, "publish") as publish,
+    ):
         assert handlers.ingest({"body": "{}"}, None)["statusCode"] == 400
         assert handlers.ingest({"body": json.dumps(reading)}, None)["statusCode"] == 401
         assert (
@@ -111,7 +117,11 @@ def test_ingest_event_round_trips_through_detector(monkeypatch):
     from tests.test_store_integration import Database
 
     database = Database()
-    with patch.object(handlers, "secret", return_value="secret"), patch.object(handlers, "publish") as publish:
+    with (
+        patch.object(handlers, "Store", return_value=Store(Database(), "test")),
+        patch.object(handlers, "secret", return_value="secret"),
+        patch.object(handlers, "publish") as publish,
+    ):
         assert (
             handlers.ingest({"body": json.dumps(r), "headers": {"authorization": "Bearer secret"}}, None)["statusCode"]
             == 202

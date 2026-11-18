@@ -4,9 +4,11 @@ import hmac
 import json
 import os
 import time
+from datetime import datetime
 from urllib.parse import parse_qs, urlencode
 
 from app.domain import apply_reading, credential, transition, validate, verify_credential
+from app.fleet import configuration
 from app.store import Store, client
 
 
@@ -56,13 +58,28 @@ def ingest(event, context):
         if len(body) > 4096:
             return response(413, {"error": "payload too large"})
         reading = validate(json.loads(body), time.time())
-        config = json.loads(os.environ["UNITS"]).get(reading["unit_id"])
-        if not config or config["site_id"] != reading["site_id"]:
+        base = json.loads(os.environ["UNITS"]).get(reading["unit_id"])
+        if not base:
             return response(401, {"error": "unauthorized"})
         supplied = {k.lower(): v for k, v in event.get("headers", {}).items()}.get("authorization", "")
-        if not hmac.compare_digest(supplied, "Bearer " + secret(config["credential_parameter"])):
+        if not hmac.compare_digest(supplied.encode(), ("Bearer " + secret(base["credential_parameter"])).encode()):
             return response(401, {"error": "unauthorized"})
-        publish({"type": "reading.received", "event_id": reading["reading_id"], **reading})
+        state, _ = Store().get("UNIT#" + reading["unit_id"])
+        config = configuration(reading["unit_id"], base, state)
+        origin = {k.lower(): v for k, v in event.get("headers", {}).items()}.get("x-coldchain-source")
+        if origin == "simulation" and config["source"] != "simulation":
+            return response(409, {"error": "device source changed; simulated reading rejected"})
+        if not config["enabled"] or config["site_id"] != reading["site_id"]:
+            return response(401, {"error": "device is disabled or site binding is invalid"})
+        publish(
+            {
+                "type": "reading.received",
+                "event_id": reading["reading_id"],
+                **reading,
+                "configuration": config,
+                "occurred_at": int(time.time()),
+            }
+        )
         log("accepted", reading_id=reading["reading_id"], unit_id=reading["unit_id"])
         return response(202, {"reading_id": reading["reading_id"]})
     except (ValueError, TypeError, KeyError):
@@ -90,8 +107,17 @@ def detector(event, context):
             {k: raw[k] for k in ("reading_id", "unit_id", "site_id", "observed_at", "temperature", "schema_version")}
         )
 
+        captured = raw.get("configuration", configs[reading["unit_id"]])
+        received_at = raw.get("occurred_at", int(time.time()))
+        if received_at - datetime.fromisoformat(reading["observed_at"]).timestamp() > max(
+            90, captured.get("interval_s", 30) * 3
+        ):
+            # Backfills stay in the lake and cannot masquerade as current health.
+            log("ignored_backfill", reading_id=reading["reading_id"], unit_id=reading["unit_id"])
+            return
+
         def change(old):
-            state, events = apply_reading(old, reading, configs[reading["unit_id"]], int(time.time()))
+            state, events = apply_reading(old, reading, captured, int(time.time()))
             return state, events, "processed"
 
         result = store.update(reading["unit_id"], change, reading["reading_id"])
@@ -159,7 +185,7 @@ def outbox(event, context):
             continue
         e = json.loads(item["payload"]["S"])
         publish(e)
-        log("outbox_published", event_id=e["event_id"], incident_id=e["incident_id"])
+        log("outbox_published", event_id=e["event_id"], incident_id=e.get("incident_id"), unit_id=e.get("unit_id"))
 
 
 def dispatch(event, context):
@@ -173,10 +199,17 @@ def dispatch(event, context):
             )
         except client("stepfunctions").exceptions.ExecutionAlreadyExists:
             pass
-    if e["type"] in ("notification.staff", "incident.escalated"):
+    if e["type"] in ("notification.staff", "incident.escalated", "device.offline"):
         state, _ = Store().get("UNIT#" + e["unit_id"])
-        incident = state["incident"]
-        if incident["incident_id"] != e["incident_id"] or incident["status"] == "resolved" or incident["acknowledged"]:
+        incident = state.get("offline_incident") if e["type"] == "device.offline" else state.get("incident")
+        if (
+            not incident
+            or incident["incident_id"] != e["incident_id"]
+            or incident["status"] in ("resolved", "closed")
+            or incident["acknowledged"]
+        ):
+            return
+        if e["type"] == "device.offline" and state.get("monitor", {}).get("until", 0) <= time.time():
             return
         expiry = incident["expires_at"]
         signature = credential(secret(os.environ["ACK_PARAMETER"]), e["unit_id"], e["incident_id"], expiry)
@@ -185,11 +218,15 @@ def dispatch(event, context):
             + "/ack?"
             + urlencode({"unit": e["unit_id"], "incident": e["incident_id"], "expiry": expiry, "signature": signature})
         )
-        audience = "STAFF_TOPIC" if e["type"] == "notification.staff" else "MANAGER_TOPIC"
+        audience = "MANAGER_TOPIC" if e["type"] == "incident.escalated" else "STAFF_TOPIC"
         client("sns").publish(
             TopicArn=os.environ[audience],
-            Subject="Cold-chain STAFF incident" if audience == "STAFF_TOPIC" else "Cold-chain MANAGER escalation",
-            Message=f"Incident {e['incident_id']} for {e['unit_id']}. Confirm: {link}",
+            Subject="Cold-chain sensor OFFLINE"
+            if e["type"] == "device.offline"
+            else "Cold-chain STAFF incident"
+            if audience == "STAFF_TOPIC"
+            else "Cold-chain MANAGER escalation",
+            Message=f"{incident.get('kind', 'temperature')} incident {e['incident_id']} for {e['unit_id']}. Confirm: {link}",
         )
     log("dispatched", event_id=e["event_id"], incident_id=e["incident_id"])
 
