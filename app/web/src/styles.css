@@ -1840,3 +1840,21 @@ td small,
 .report-meta {
   color: #68755f;
 }
+.outcome-checks {
+  display: grid;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+.outcome-checks > div {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  font-size: 12px;
+  color: #607351;
+}
+.outcome-checks .badge {
+  margin-left: auto;
+}
+.outcome-panel .small {
+  font-size: 10px;
+}

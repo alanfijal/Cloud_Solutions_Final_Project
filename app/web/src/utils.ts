@@ -18,7 +18,13 @@ export const time = (stamp?: number | null) =>
     : "—";
 export const date = (stamp?: number | null) =>
   stamp ? new Date(stamp * 1000).toLocaleString() : "—";
-export const duration = (seconds: number) =>
-  `${Math.floor(Math.max(0, seconds) / 60)}m ${Math.floor(Math.max(0, seconds) % 60)}s`;
+export const duration = (seconds: number) => {
+  const n = Math.floor(Math.max(0, seconds));
+  if (n >= 86400)
+    return `${Math.floor(n / 86400)}d ${Math.floor((n % 86400) / 3600)}h`;
+  if (n >= 3600)
+    return `${Math.floor(n / 3600)}h ${Math.floor((n % 3600) / 60)}m`;
+  return `${Math.floor(n / 60)}m ${n % 60}s`;
+};
 export const title = (text: string) =>
   text.replaceAll("_", " ").replace(/^./, (c) => c.toUpperCase());

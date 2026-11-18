@@ -21,6 +21,7 @@ export function Analytics({
 }) {
   const [window, setWindow] = useState("24h"),
     [unit, setUnit] = useState("all");
+  const selectedUnit = units.some((u) => u.unit_id === unit) ? unit : "all";
   const rows = report?.rows || [];
   const total = rows.reduce((sum, r) => sum + Number(r.readings || 0), 0);
   function exportReport() {
@@ -47,14 +48,20 @@ export function Analytics({
             e.preventDefault();
             void generate({
               request_id: crypto.randomUUID(),
-              units: unit === "all" ? units.map((u) => u.unit_id) : [unit],
+              units:
+                selectedUnit === "all"
+                  ? units.map((u) => u.unit_id)
+                  : [selectedUnit],
               window,
             }).catch(() => {});
           }}
         >
           <label>
             Devices
-            <select value={unit} onChange={(e) => setUnit(e.target.value)}>
+            <select
+              value={selectedUnit}
+              onChange={(e) => setUnit(e.target.value)}
+            >
               <option value="all">All devices</option>
               {units.map((u) => (
                 <option key={u.unit_id} value={u.unit_id}>

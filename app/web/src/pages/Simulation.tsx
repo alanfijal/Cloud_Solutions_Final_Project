@@ -1,3 +1,4 @@
+import { SimulationOutcomes } from "../components/SimulationOutcomes";
 import { useState } from "react";
 import {
   Check,
@@ -56,6 +57,7 @@ export function Simulation({
   return (
     <div className="lab-layout">
       <div>
+        {session && <SimulationOutcomes session={session} units={units} />}
         <div className="section-heading">
           <div>
             <span className="eyebrow">REHEARSE THE REAL WORLD</span>

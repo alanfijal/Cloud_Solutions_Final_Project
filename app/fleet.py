@@ -14,7 +14,11 @@ class Conflict(ValueError):
 def configuration(unit, base, state=None):
     kind = "freezer" if base.get("threshold", 5) < 0 else "fridge"
     number = unit.removeprefix("unit-")
-    name = f"{kind.title()} {max(1, int(number) - (3 if kind == 'freezer' else 0)):02d}" if unit.startswith("unit-") and number.isdigit() else unit.replace("-", " ").title()
+    name = (
+        f"{kind.title()} {max(1, int(number) - (3 if kind == 'freezer' else 0)):02d}"
+        if unit.startswith("unit-") and number.isdigit()
+        else unit.replace("-", " ").title()
+    )
     defaults = {
         "name": name,
         "site_id": base["site_id"],
