@@ -1,185 +1,331 @@
-"""Browser regression checks with a local static server and mocked API; no AWS calls."""
+"""React browser checks against a local mocked API. No AWS requests or credentials."""
 
 import copy
 import json
+import mimetypes
 import threading
 import time
+from datetime import datetime, timezone
 from functools import partial
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
+from playwright.sync_api import expect, sync_playwright
 
-def fixtures():
+ROOT = Path(__file__).resolve().parents[1]
+TEST_KEY = "local-browser-test"
+
+
+def fixture():
     now = int(time.time())
-    incident = {
-        "incident_id": "fixture-incident",
-        "unit_id": "unit-1",
-        "status": "open",
-        "acknowledged": False,
-        "opened_at": now - 60,
-        "expires_at": now + 3600,
-    }
     units = []
-    for i in range(1, 6):
-        value = 7 if i == 1 else -20 if i % 2 == 0 else 4
-        history = [
-            [time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(now - (19 - n) * 30)), value - 1 + n % 3 * 0.5]
-            for n in range(20)
-        ]
+    for n in range(1, 6):
+        freezer = n >= 4
+        temperature = -20.0 if freezer else 7.0 if n == 1 else 3.5
+        incident = (
+            {
+                "incident_id": "browser-incident",
+                "unit_id": "unit-1",
+                "kind": "temperature",
+                "status": "open",
+                "acknowledged": False,
+                "opened_at": now - 50,
+                "expires_at": now + 3600,
+                "staff_requested": True,
+                "staff_requested_at": now - 48,
+            }
+            if n == 1
+            else None
+        )
         units.append(
             {
-                "unit_id": f"unit-{i}",
+                "unit_id": f"unit-{n}",
+                "name": f"Freezer {n - 3:02d}" if freezer else f"Fridge {n:02d}",
                 "site_id": "demo-site",
-                "threshold": -18 if i % 2 == 0 else 5,
+                "kind": "freezer" if freezer else "fridge",
+                "threshold": -18 if freezer else 5,
                 "direction": "max",
-                "temperature": value,
-                "observed_at": history[-1][0],
-                "consecutive": 3 if i == 1 else 0,
-                "history": history,
-                "incident": incident if i == 1 else None,
-                "incidents": [incident] if i == 1 else [],
+                "interval_s": 30,
+                "source": "simulation",
+                "enabled": True,
+                "revision": 0,
+                "temperature": temperature,
+                "observed_at": datetime.fromtimestamp(now, timezone.utc).isoformat(),
+                "consecutive": 3 if n == 1 else 0,
+                "history": [
+                    [
+                        datetime.fromtimestamp(now - (19 - i) * 30, timezone.utc).isoformat(),
+                        temperature + (i % 3 - 1) * 0.2,
+                    ]
+                    for i in range(20)
+                ],
+                "incident": incident,
+                "offline_incident": None,
+                "incidents": [incident] if incident else [],
+                "monitoring": False,
+                "monitor_until": None,
+                "connection": "online",
             }
         )
-    return {"units": units, "server_time": now, "ingestion_enabled": True}
+    return {
+        "units": units,
+        "server_time": now,
+        "history_limit": 20,
+        "ingestion_enabled": True,
+        "session": None,
+        "report": None,
+        "device_endpoint": "https://example.execute-api.eu-north-1.amazonaws.com",
+    }
 
 
-class Handler(SimpleHTTPRequestHandler):
-    def log_message(self, format, *args):
+class API(SimpleHTTPRequestHandler):
+    state = fixture()
+    calls = []
+    throttled = set()
+
+    def log_message(self, *_):
         pass
 
     def end_headers(self):
         self.send_header(
             "Content-Security-Policy",
-            "default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self' data:; base-uri 'none'; frame-ancestors 'none'",
+            "default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self'; img-src 'self' data:; base-uri 'none'; frame-ancestors 'none'; form-action 'self'",
         )
         super().end_headers()
 
+    def reply(self, code, body):
+        encoded = json.dumps(body).encode()
+        self.send_response(code)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Cache-Control", "no-store")
+        self.send_header("Content-Length", str(len(encoded)))
+        self.end_headers()
+        self.wfile.write(encoded)
+
+    def authorized(self):
+        if self.headers.get("Authorization") != "Bearer " + TEST_KEY:
+            self.reply(401, {"error": "Enter a valid operator access key"})
+            return False
+        return True
+
+    def do_GET(self):
+        if self.path == "/dashboard/state":
+            if self.authorized():
+                self.state["server_time"] = int(time.time())
+                self.reply(200, self.state)
+            return
+        super().do_GET()
+
+    def do_POST(self):
+        if not self.authorized():
+            return
+        body = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
+        self.calls.append((self.path, copy.deepcopy(body)))
+        unit = next((u for u in self.state["units"] if u["unit_id"] == body.get("unit_id")), None)
+        if self.path == "/dashboard/devices":
+            unit.update(body)
+            unit["revision"] += 1
+            if unit["source"] == "physical":
+                unit.update(temperature=None, history=[], connection="stale")
+        elif self.path == "/dashboard/readings":
+            if body["reading_id"] not in self.throttled:
+                self.throttled.add(body["reading_id"])
+                self.reply(429, {"error": "Test throttling"})
+                return
+            unit.update(temperature=body["temperature"], observed_at=body["observed_at"])
+            unit["history"] = (unit["history"] + [[body["observed_at"], body["temperature"]]])[-20:]
+        elif self.path == "/dashboard/ack":
+            unit["incident"].update(acknowledged=True, acknowledged_at=int(time.time()))
+        elif self.path == "/dashboard/incidents":
+            if body["text"] == "conflict":
+                self.reply(409, {"error": "Test conflict: refresh and retry"})
+                return
+            entry = {
+                "request_id": body["request_id"],
+                "action": body["action"],
+                "text": body["text"],
+                "at": int(time.time()),
+            }
+            unit["incident"].setdefault("activity", []).append(entry)
+            if body["action"] == "assign":
+                unit["incident"]["assignee"] = body["text"]
+        elif self.path == "/dashboard/sessions/start":
+            now = int(time.time())
+            self.state["session"] = {
+                "session_id": body["request_id"],
+                **body,
+                "started_at": now,
+                "deadline": now + body["duration_s"],
+                "status": "running",
+                "max_steps": 100,
+                "spacing_s": 6,
+                "processed_steps": 2,
+                "submitted": 2,
+                "skipped": 0,
+            }
+        elif self.path == "/dashboard/sessions/stop":
+            self.state["session"]["status"] = "stopped"
+        elif self.path == "/dashboard/reports":
+            now = int(time.time())
+            self.state["report"] = {
+                "request_id": body["request_id"],
+                **body,
+                "start": now - 3600,
+                "end": now,
+                "created_at": now,
+                "status": "succeeded",
+                "query_id": "local-test-query",
+                "bytes_scanned": 128000,
+                "rows": [
+                    {
+                        "unit_id": "unit-1",
+                        "readings": "100",
+                        "minimum": "3.0",
+                        "maximum": "8.0",
+                        "average": "4.5",
+                        "observed_seconds": "570",
+                        "excursion_seconds": "180",
+                        "unclassified_readings": "0",
+                        "incidents": "1",
+                        "response_seconds": "40",
+                        "recovery_seconds": "240",
+                    }
+                ],
+            }
+            self.reply(202, self.state["report"])
+            return
+        else:
+            self.reply(404, {"error": "Unknown test route"})
+            return
+        self.reply(200, {"status": "saved"})
+
 
 def main():
-    from playwright.sync_api import expect, sync_playwright
-
-    root = Path(__file__).resolve().parents[1]
-    output = root / ".local"
-    output.mkdir(exist_ok=True)
-    server = ThreadingHTTPServer(("127.0.0.1", 0), partial(Handler, directory=str(root / "app/web")))
-    thread = threading.Thread(target=server.serve_forever, daemon=True)
-    thread.start()
-    state = fixtures()
-    submitted, errors = [], []
-    should_throttle = [True]
-
-    def route(request_route):
-        request = request_route.request
-        if request.headers.get("authorization") != "Bearer fixture-access":
-            request_route.fulfill(status=401, json={"error": "Enter a valid operator access key"})
-        elif request.url.endswith("/state"):
-            request_route.fulfill(json=copy.deepcopy(state), headers={"cache-control": "no-store"})
-        elif request.url.endswith("/readings"):
-            submitted.append(request.post_data_json)
-            if should_throttle[0]:
-                should_throttle[0] = False
-                request_route.fulfill(status=429, json={"error": "Transient throttle"})
-            else:
-                request_route.fulfill(status=202, json={"reading_id": request.post_data_json["reading_id"]})
-        elif request.url.endswith("/ack"):
-            state["units"][0]["incident"]["acknowledged"] = True
-            request_route.fulfill(json={"status": "acknowledged"})
-        else:
-            request_route.fulfill(status=404, json={"error": "Not found"})
-
+    if not (ROOT / "artifacts/web/index.html").exists():
+        raise RuntimeError("Run npm run build --prefix app/web before browser checks")
+    mimetypes.add_type("application/javascript", ".js")
+    server = ThreadingHTTPServer(("127.0.0.1", 0), partial(API, directory=str(ROOT / "artifacts/web")))
+    worker = threading.Thread(target=server.serve_forever, daemon=True)
+    worker.start()
+    errors = []
     try:
         with sync_playwright() as playwright:
             browser = playwright.chromium.launch()
-            page = browser.new_page(viewport={"width": 1440, "height": 1100}, device_scale_factor=1)
-            page.on("pageerror", lambda error: errors.append(str(error)))
-            page.on(
-                "console",
-                lambda message: errors.append(message.text) if "Content Security Policy" in message.text else None,
-            )
-            page.route("**/dashboard/**", route)
-            page.goto(f"http://127.0.0.1:{server.server_port}")
-            page.locator("#access-key").fill("wrong-key")
-            page.locator("#connect").click()
-            expect(page.locator("#login-error")).to_contain_text("rejected")
-            page.locator("#access-key").fill("fixture-access")
-            page.locator("#connect").click()
-            expect(page.locator("#login")).not_to_be_visible()
-            expect(page.locator(".unit-card")).to_have_count(5)
-            assert page.evaluate("localStorage.length + sessionStorage.length") == 0
-            assert page.locator("#access-key").input_value() == ""
-            page.screenshot(path=str(output / "dashboard-desktop.png"), full_page=True)
-            page.get_by_role("button", name="Freezers", exact=True).click()
-            expect(page.locator(".unit-card")).to_have_count(2)
-            page.get_by_role("button", name="All units", exact=True).click()
-            page.get_by_role("button", name="View Fridge 01 temperature history", exact=True).click()
-            expect(page.locator("#history-view")).to_be_visible()
-            expect(page.locator(".large-chart")).to_be_visible()
-            with page.expect_download() as download:
-                page.locator("#export-history").click()
-            assert download.value.suggested_filename == "unit-1-temperature.csv"
-            page.locator(".nav-item[data-view=incidents]").click()
-            page.locator("#all-incidents button[data-ack]").click()
-            expect(page.locator("#all-incidents")).to_contain_text("Acknowledged")
-            page.locator(".nav-item[data-view=overview]").click()
-            expect(page.locator(".unit-card.acknowledged.alert")).to_have_count(1)
-            page.locator("#manual-temperature").fill("7")
-            page.locator("#send-reading").click()
-            expect(page.locator("#manual-status")).to_contain_text("accepted", timeout=10000)
-            assert len(submitted) == 2 and submitted[0] == submitted[1]
-            page.set_viewport_size({"width": 390, "height": 844})
-            page.evaluate("window.scrollTo(0, 0)")
-            page.screenshot(path=str(output / "dashboard-mobile.png"), full_page=True)
-            assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth"), "Mobile layout overflows"
-            page.clock.install()
-            page.locator("#start-demo").click()
-            page.clock.run_for(100)
-            expect(page.locator("#demo-count")).to_have_text("1 / 100")
-            page.locator("#stop-demo").click()
-            sent = len(submitted)
-            page.clock.fast_forward(60000)
-            assert len(submitted) == sent, "Stopped demo continued sending"
-            page.locator("#start-demo").click()
-            page.clock.run_for(100)
-            expect(page.locator("#demo-count")).to_have_text("1 / 100")
-            page.clock.fast_forward(600001)
-            expect(page.locator("#stop-demo")).not_to_be_visible()
-            sent = len(submitted)
-            page.clock.fast_forward(60000)
-            assert len(submitted) == sent, "Expired demo continued sending"
-            expect(page.locator("#auto-refresh-status")).to_contain_text("paused")
-            page.locator("#disconnect").click()
-            expect(page.locator("#login")).to_be_visible()
-            expect(page.locator(".unit-card")).to_have_count(0)
-            assert not errors, errors
-            browser.close()
-            print(
-                json.dumps(
-                    {
-                        "browser_checks": "passed",
-                        "covered": [
-                            "login rejection",
-                            "private key held only in memory",
-                            "five units",
-                            "filters",
-                            "chart",
-                            "CSV export",
-                            "acknowledgement",
-                            "stable reading ID across HTTP retry",
-                            "mobile layout",
-                            "stop control",
-                            "simulation deadline",
-                            "polling deadline",
-                            "disconnect",
-                            "CSP",
-                        ],
-                        "screenshots": [".local/dashboard-desktop.png", ".local/dashboard-mobile.png"],
-                    }
+            try:
+                page = browser.new_page(viewport={"width": 1440, "height": 1050}, device_scale_factor=1)
+                page.on("pageerror", lambda e: errors.append(str(e)))
+                page.add_init_script(
+                    "document.addEventListener('securitypolicyviolation', e => { window.__csp = (window.__csp || []).concat(e.violatedDirective); });"
                 )
-            )
+                page.goto(f"http://127.0.0.1:{server.server_port}")
+                page.get_by_label("Operator access key").fill("wrong")
+                page.get_by_role("button", name="Open workspace").click()
+                expect(page.get_by_role("alert")).to_contain_text("valid operator")
+                page.get_by_label("Operator access key").fill(TEST_KEY)
+                page.get_by_role("button", name="Open workspace").click()
+                expect(page.locator(".unit-card")).to_have_count(5)
+                assert page.evaluate("localStorage.length + sessionStorage.length") == 0
+                assert page.locator('input[type="password"]').count() == 0
+                page.screenshot(path=str(ROOT / ".local/mvp-desktop.png"), full_page=True)
+                page.get_by_role("button", name="Freezers", exact=True).click()
+                expect(page.locator(".unit-card")).to_have_count(2)
+                page.get_by_role("button", name="All devices", exact=True).click()
+                page.locator(".unit-card").first.click()
+                expect(page.locator("dialog .recharts-surface")).to_have_count(1)
+                page.get_by_label("Send a manual reading").fill("7")
+                page.get_by_role("button", name="Send reading", exact=True).click()
+                expect(page.get_by_role("status")).to_contain_text("Reading accepted", timeout=10000)
+                readings = [body for path, body in API.calls if path == "/dashboard/readings"]
+                assert len(readings) == 2 and readings[0] == readings[1]
+                page.get_by_role("button", name="Close detail").click()
+                page.get_by_role("navigation").get_by_role("button", name="Incidents").click()
+                page.locator(".incident-row").first.click()
+                page.get_by_role("button", name="Acknowledge", exact=True).click()
+                expect(page.locator("dialog")).to_contain_text("Acknowledged")
+                expect(page.locator("dialog")).not_to_contain_text("Temperature returned within range")
+                page.get_by_label("Details", exact=True).fill("conflict")
+                page.get_by_role("button", name="Save activity").click()
+                expect(page.locator("dialog [role=alert]")).to_contain_text("Test conflict")
+                page.get_by_label("Details", exact=True).fill("Door seal checked")
+                page.get_by_role("button", name="Save activity").click()
+                expect(page.locator(".timeline")).to_contain_text("Door seal checked")
+                page.get_by_label("Activity", exact=True).select_option("assign")
+                page.get_by_label("Responder name", exact=True).fill("Night shift")
+                page.get_by_role("button", name="Save activity").click()
+                expect(page.locator("dialog")).to_contain_text("Assigned responder: Night shift")
+                page.get_by_role("button", name="Close detail").click()
+                page.get_by_role("navigation").get_by_role("button", name="Overview").click()
+                expect(page.locator(".unit-card").first).to_have_class("unit-card attention")
+                page.get_by_role("navigation").get_by_role("button", name="Devices").click()
+                page.get_by_role("button", name="Configure").nth(1).click()
+                page.get_by_label("Device name").fill("Prep fridge")
+                page.get_by_label("Data source").select_option("physical")
+                page.get_by_role("button", name="Save device settings").click()
+                expect(page.locator("dialog h2")).to_contain_text("Prep fridge")
+                page.get_by_role("button", name="Connect a sensor").click()
+                expect(page.locator("dialog pre")).to_contain_text('"unit_id": "unit-2"')
+                expect(page.locator("dialog")).to_contain_text("Device keys are never returned")
+                page.get_by_role("button", name="Close detail").click()
+                page.get_by_role("navigation").get_by_role("button", name="Simulation lab").click()
+                expect(page.locator(".scenario-card")).to_have_count(6)
+                page.screenshot(path=str(ROOT / ".local/mvp-simulation.png"), full_page=True)
+                page.get_by_role("button", name="Start simulation", exact=True).click()
+                expect(page.get_by_role("button", name="Stop session", exact=True)).to_be_visible()
+                start = [body for path, body in API.calls if path == "/dashboard/sessions/start"][0]
+                assert start["duration_s"] == 600 and start["interval_s"] == 30 and "unit-2" not in start["units"]
+                page.get_by_role("button", name="Stop session", exact=True).click()
+                expect(page.locator(".last-run")).to_contain_text("Stopped")
+                page.get_by_role("navigation").get_by_role("button", name="Analytics").click()
+                page.get_by_role("button", name="Generate report", exact=True).click()
+                expect(page.locator("table")).to_contain_text("Fridge 01")
+                expect(page.locator(".report-meta")).to_contain_text("125.0 KiB scanned")
+                with page.expect_download() as download:
+                    page.get_by_role("button", name="Export CSV", exact=True).click()
+                assert download.value.suggested_filename == "coldchain-report.csv"
+                page.set_viewport_size({"width": 390, "height": 844})
+                for view in ("Overview", "Devices", "Incidents", "Analytics", "Simulation lab"):
+                    page.get_by_role("navigation").get_by_role("button", name=view).click()
+                    assert page.evaluate("document.documentElement.scrollWidth <= innerWidth"), view
+                page.screenshot(path=str(ROOT / ".local/mvp-mobile.png"), full_page=True)
+                page.clock.install()
+                page.clock.fast_forward(601000)
+                expect(page.get_by_text("Live updates paused after ten minutes.")).to_be_visible()
+                page.get_by_role("button", name="Disconnect workspace", exact=True).click()
+                expect(page.get_by_role("button", name="Open workspace", exact=True)).to_be_visible()
+                assert page.locator(".unit-card").count() == 0
+                assert not page.evaluate("window.__csp || []"), page.evaluate("window.__csp")
+                assert not errors, errors
+                evidence = {
+                    "source": "local React production build with mocked API; no AWS",
+                    "checks": [
+                        "invalid and valid authentication",
+                        "no persistent browser credential",
+                        "five device cards and filters",
+                        "lazy interactive chart",
+                        "stable reading ID across 429 retry",
+                        "acknowledgement does not recover temperature",
+                        "visible modal conflict",
+                        "incident notes and assignment",
+                        "versioned device configuration",
+                        "physical onboarding guidance",
+                        "six simulation scenarios",
+                        "backend session start and stop",
+                        "on-demand report and CSV",
+                        "five mobile views without overflow",
+                        "bounded polling",
+                        "disconnect data clearing",
+                        "CSP",
+                    ],
+                    "page_errors": errors,
+                }
+                (ROOT / ".local/mvp-browser-evidence.json").write_text(json.dumps(evidence, indent=2))
+                print(json.dumps(evidence))
+            finally:
+                browser.close()
     finally:
         server.shutdown()
         server.server_close()
-        thread.join(timeout=2)
+        worker.join(timeout=2)
 
 
 if __name__ == "__main__":

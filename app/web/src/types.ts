@@ -1,0 +1,88 @@
+export type Activity = {
+  request_id: string;
+  action: string;
+  text: string;
+  at: number;
+};
+export type Incident = {
+  incident_id: string;
+  unit_id: string;
+  kind?: string;
+  status: string;
+  acknowledged: boolean;
+  opened_at: number;
+  expires_at: number;
+  acknowledged_at?: number;
+  resolved_at?: number;
+  closed_at?: number;
+  manager_requested?: boolean;
+  staff_requested?: boolean;
+  staff_requested_at?: number;
+  escalated_at?: number;
+  assignee?: string;
+  resolution?: string;
+  activity?: Activity[];
+};
+export type Unit = {
+  unit_id: string;
+  name: string;
+  site_id: string;
+  kind: "fridge" | "freezer";
+  threshold: number;
+  direction: "min" | "max";
+  interval_s: number;
+  source: "simulation" | "physical";
+  enabled: boolean;
+  revision: number;
+  temperature: number | null;
+  observed_at: string | null;
+  consecutive: number;
+  history: [string, number][];
+  incident: Incident | null;
+  offline_incident: Incident | null;
+  incidents: Incident[];
+  monitoring: boolean;
+  monitor_until: number | null;
+  connection: string;
+};
+export type Session = {
+  session_id: string;
+  mode: string;
+  scenario: string;
+  units: string[];
+  duration_s: number;
+  interval_s: number;
+  max_steps: number;
+  spacing_s: number;
+  started_at: number;
+  deadline: number;
+  status: string;
+  processed_steps: number;
+  submitted: number;
+  skipped: number;
+};
+export type ReportRow = Record<string, string | null>;
+export type Report = {
+  request_id: string;
+  status: string;
+  units: string[];
+  window: string;
+  start: number;
+  end: number;
+  created_at: number;
+  rows: ReportRow[];
+  query_id?: string;
+  bytes_scanned?: number;
+  error?: string;
+};
+export type Snapshot = {
+  units: Unit[];
+  server_time: number;
+  history_limit: number;
+  ingestion_enabled: boolean;
+  session: Session | null;
+  report: Report | null;
+  device_endpoint: string;
+};
+export type View =
+  "overview" | "devices" | "incidents" | "analytics" | "simulation";

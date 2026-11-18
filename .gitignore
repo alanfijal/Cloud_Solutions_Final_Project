@@ -14,6 +14,13 @@ htmlcov/
 coverage.xml
 build/
 dist/
+node_modules/
+*.tsbuildinfo
+.vite/
+playwright-report/
+test-results/
+*.sqlite
+*.sqlite-*
 
 # Terraform: keep .terraform.lock.hcl in Git; never commit state or plans
 **/.terraform/*

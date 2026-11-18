@@ -1,0 +1,10 @@
+:root {
+  --canvas: #f7f8f3;
+  --paper: #fff;
+  --forest: #193d32;
+  --ink: #293e30;
+  --muted: #68755f;
+  --border: #e4e9de;
+  --amber: #b17c36;
+  color-scheme: light;
+}
