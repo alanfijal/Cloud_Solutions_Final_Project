@@ -17,6 +17,60 @@ def test_identity_rejects_wrong_account_and_root():
                 identity()
 
 
+def test_terraform_credentials_refresh_without_persisting_keys(tmp_path, monkeypatch):
+    import os
+    import shutil
+    import sys
+    from datetime import UTC, datetime, timedelta
+
+    import boto3
+
+    from scripts.aws_local import terraform_env
+
+    source = tmp_path / "original config"
+    source.write_text("# original browser-login profile\n")
+    count = tmp_path / "refresh-count"
+    fake_cli = tmp_path / "fake aws"
+    fake_cli.write_text(
+        f"#!{sys.executable}\n"
+        "import json, os, pathlib\nfrom datetime import UTC, datetime, timedelta\n"
+        f"assert os.environ['AWS_CONFIG_FILE'] == {str(source)!r}\n"
+        f"p = pathlib.Path({str(count)!r})\n"
+        "n = int(p.read_text()) + 1 if p.exists() else 1\np.write_text(str(n))\n"
+        "print(json.dumps({'Version':1, 'AccessKeyId':'TESTKEY'+str(n), 'SecretAccessKey':'test', "
+        "'SessionToken':'test', 'Expiration':(datetime.now(UTC)+timedelta(hours=1)).isoformat()}))\n"
+    )
+    fake_cli.chmod(0o700)
+    env_exe = shutil.which("env")
+    monkeypatch.setenv("AWS_CONFIG_FILE", str(source))
+    monkeypatch.setenv("AWS_ACCESS_KEY_ID", "must-be-removed")
+    monkeypatch.setenv("AWS_SECRET_ACCESS_KEY", "must-be-removed")
+    config = tmp_path / "terraform config"
+    with (
+        patch("scripts.aws_local.identity"),
+        patch("scripts.aws_local.shutil.which", side_effect=[env_exe, str(fake_cli)]),
+    ):
+        env = terraform_env(config)
+    assert not any(key in env for key in ("AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY", "AWS_SESSION_TOKEN"))
+    assert config.stat().st_mode & 0o777 == 0o600
+    with patch.dict(os.environ, env, clear=True):
+        credentials = boto3.Session().get_credentials()
+        first = credentials.get_frozen_credentials().access_key
+        credentials._expiry_time = datetime.now(UTC) - timedelta(seconds=1)
+        second = credentials.get_frozen_credentials().access_key
+    assert first != second
+    assert "TESTKEY" not in config.read_text() and "SecretAccessKey" not in config.read_text()
+
+
+def test_terraform_refuses_a_recursive_credential_profile(tmp_path, monkeypatch):
+    from scripts.aws_local import terraform_env
+
+    config = tmp_path / "config"
+    monkeypatch.setenv("AWS_CONFIG_FILE", str(config))
+    with patch("scripts.aws_local.identity"), pytest.raises(ValueError, match="must differ"):
+        terraform_env(config)
+
+
 def saved(tmp_path):
     path = tmp_path / "review.tfplan"
     path.write_bytes(b"reviewed-binary-plan")

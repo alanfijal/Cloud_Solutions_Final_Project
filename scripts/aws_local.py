@@ -2,6 +2,8 @@
 
 import json
 import os
+import pathlib
+import shutil
 import subprocess
 
 import boto3
@@ -68,15 +70,50 @@ def session():
     )
 
 
-def terraform_env():
-    c = temporary_credentials()
+def terraform_env(config_path=None):
+    identity()
+    # Let Terraform refresh through the CLI instead of freezing 15-minute login
+    # credentials in environment variables for the duration of a plan/apply.
+    config_path = pathlib.Path(
+        config_path or pathlib.Path(__file__).resolve().parents[1] / ".local/terraform-aws-config"
+    )
+    source_config = pathlib.Path(os.environ.get("AWS_CONFIG_FILE", "~/.aws/config")).expanduser().resolve()
+    if source_config == config_path.resolve():
+        raise ValueError("The source AWS configuration must differ from the generated Terraform profile")
+    command = [
+        shutil.which("env"),
+        "AWS_CONFIG_FILE=" + str(source_config),
+        shutil.which("aws"),
+        "configure",
+        "export-credentials",
+        "--profile",
+        PROFILE,
+        "--format",
+        "process",
+    ]
+    if any(not value or any(c in value for c in '\\"\n\r') for value in command):
+        raise ValueError("AWS CLI/env must be installed, with paths and profile names safe for a credential_process")
+    config_path.parent.mkdir(exist_ok=True)
+    with open(os.open(config_path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600), "w") as config:
+        os.chmod(config_path, 0o600)
+        config.write("[profile coldchain-terraform]\nregion = " + REGION + "\ncredential_process = ")
+        config.write(" ".join('"' + value + '"' for value in command) + "\n")
     env = os.environ.copy()
-    for key in ("AWS_PROFILE", "AWS_DEFAULT_PROFILE", "AWS_ROLE_ARN", "AWS_WEB_IDENTITY_TOKEN_FILE"):
+    for key in (
+        "AWS_ACCESS_KEY_ID",
+        "AWS_SECRET_ACCESS_KEY",
+        "AWS_SESSION_TOKEN",
+        "AWS_SECURITY_TOKEN",
+        "AWS_PROFILE",
+        "AWS_DEFAULT_PROFILE",
+        "AWS_ROLE_ARN",
+        "AWS_WEB_IDENTITY_TOKEN_FILE",
+    ):
         env.pop(key, None)
     env.update(
-        AWS_ACCESS_KEY_ID=c["AccessKeyId"],
-        AWS_SECRET_ACCESS_KEY=c["SecretAccessKey"],
-        AWS_SESSION_TOKEN=c["SessionToken"],
+        AWS_CONFIG_FILE=str(config_path.resolve()),
+        AWS_PROFILE="coldchain-terraform",
+        AWS_SDK_LOAD_CONFIG="1",
         AWS_REGION=REGION,
         AWS_DEFAULT_REGION=REGION,
         TF_IN_AUTOMATION="1",

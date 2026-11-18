@@ -170,7 +170,7 @@ Run `init -backend=false -lockfile=readonly` and `validate` in each Terraform ro
 The browser check serves the actual React production build with a local mocked API.
 It tests authentication, charts, stable retries, incident actions, device editing,
 sessions, reports/CSV, responsive views, polling deadlines and disconnect clearing.
-**101 Python tests**, mocked Terraform contracts, four root validations and the
+**103 Python tests**, mocked Terraform contracts, four root validations and the
 React desktop/mobile browser checks passed locally. Screenshots/evidence stay
 ignored in `.local/`. Local checks do not prove AWS
 integration or physical sensor operation.
@@ -221,6 +221,10 @@ credentials in memory. No static keys or runtime-secret values enter Git or
 Terraform state. IAM policies use named project resources; X-Ray and DynamoDB
 ListStreams require resource wildcards. Managed SNS key access is constrained by
 service, account and topic encryption context. `COLDCHAIN_PROFILE` can select another authorized temporary profile.
+The local Terraform helper writes an ignored, owner-only credential-process profile
+that delegates to the AWS CLI and refreshes temporary credentials when needed.
+It stores no keys in that profile; an existing browser login is still required.
+This follows the [AWS credential-process pattern](https://docs.aws.amazon.com/cli/latest/reference/configure/export-credentials.html).
 
 Read-only evidence on **18 November 2026**: ACTIVE Free plan, **$160 reported
 remaining credits**, plan expiry **17 May 2027**, account Lambda concurrency 400.
