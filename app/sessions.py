@@ -120,7 +120,11 @@ def start(body, store=None, now=None):
             input=json.dumps({"session_id": session["session_id"], "step": 0}, sort_keys=True),
         )
     except client("stepfunctions").exceptions.ExecutionAlreadyExists:
-        pass
+        finish_units(session, store, now)
+        store.mutate(
+            ACTIVE, lambda old: {**old, "status": "failed"} if old["session_id"] == session["session_id"] else old
+        )
+        raise Conflict("This session ID was already used; start a new session") from None
 
     def running(old):
         if old["session_id"] != session["session_id"]:

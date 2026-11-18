@@ -156,8 +156,8 @@ def transition(old, incident_id, action, now):
         if incident["manager_requested"]:
             return state, [], "escalated"
         return state, [], "waiting"
-    if incident["status"] == "resolved":
-        return state, [], "resolved"
+    if incident["status"] in ("resolved", "closed"):
+        return state, [], incident["status"]
     return state, [], "acknowledged" if incident["acknowledged"] else "waiting"
 
 

@@ -147,7 +147,13 @@ def start(body, store=None, now=None):
             input=json.dumps({"request_id": record["request_id"], "poll": 0}, sort_keys=True),
         )
     except client("stepfunctions").exceptions.ExecutionAlreadyExists:
-        pass
+        store.mutate(
+            SLOT,
+            lambda old: {**old, "status": "failed", "error": "Report ID was already used"}
+            if old["request_id"] == record["request_id"]
+            else old,
+        )
+        raise Conflict("This report ID was already used; request a new report") from None
     return public(record)
 
 

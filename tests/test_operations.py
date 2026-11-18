@@ -472,3 +472,22 @@ def test_unicode_activity_is_bounded_by_bytes_and_control_characters_are_rejecte
     for text in ["\x01" * 100, "\u03b1" * 500]:
         with pytest.raises(ValueError):
             annotate(state, {**body, "text": text}, 200)
+
+
+def test_completed_workflow_id_is_not_misreported_as_a_new_running_session(store):
+    sfn = states()
+    sfn.start_execution.side_effect = sfn.exceptions.ExecutionAlreadyExists("used")
+    with patch.object(sessions, "client", return_value=sfn):
+        with pytest.raises(Conflict, match="already used"):
+            sessions.start(session_body(), store, 100)
+    assert store.get(sessions.ACTIVE)[0]["status"] == "failed"
+    assert store.get("UNIT#unit-1")[0]["monitor"]["until"] == 100
+
+
+def test_completed_report_id_releases_the_lease_with_an_explicit_error(store):
+    sfn = states()
+    sfn.start_execution.side_effect = sfn.exceptions.ExecutionAlreadyExists("used")
+    with patch.object(reports, "client", return_value=sfn):
+        with pytest.raises(Conflict, match="already used"):
+            reports.start({"request_id": "old", "units": ["unit-1"], "window": "1h"}, store, 100)
+    assert store.get(reports.SLOT)[0]["status"] == "failed"
