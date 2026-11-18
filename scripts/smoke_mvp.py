@@ -77,7 +77,13 @@ def run_session(api, scenario, seconds):
                 incident = incident if incident and incident["opened_at"] >= started["started_at"] else None
             if incident:
                 seen, incident_id = True, incident["incident_id"]
-                should_ack = scenario == "disconnect" or incident.get("manager_requested")
+                # Let the asynchronous publisher observe an unacknowledged
+                # offline incident before we acknowledge it.
+                should_ack = (
+                    time.time() >= incident["opened_at"] + 30
+                    if scenario == "disconnect"
+                    else incident.get("manager_requested")
+                )
                 if should_ack and not acked and incident["status"] not in ("resolved", "closed"):
                     api.call("ack", {"unit_id": "unit-1", "incident_id": incident_id})
                     acked = True

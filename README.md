@@ -192,15 +192,19 @@ and five lifecycle events, scanning 53,684 bytes. The original dashboard also
 passed a ten-reading browser smoke test, including acknowledgement/recovery and
 mobile/chart/CSV. Anonymous API access returned 401; direct S3 returned 403. Queues
 and all five DLQs drained. Fault injection/redrive was tested locally, not on AWS.
-MVP verification, 18 November 2026: **24 distinct readings** across compressor
-and disconnection runs plus one gateway protocol measurement. Temperature escalation,
+MVP verification, 18 November 2026: **27 distinct readings** across one compressor
+and two disconnection runs plus one gateway protocol measurement. Temperature escalation,
 acknowledgement after the incident workflow had succeeded, recovery, offline
 acknowledgement and fresh-data reconnection passed. A reversible device-name edit
-was verified and restored. The report returned lake aggregates, scanning **348,984
-bytes**. The local monitor hit a DNS error; the bounded backend completed its run,
+was verified and restored. The report returned 23 readings and two incidents for
+the first two runs, scanning **348,984 bytes** before the supplemental offline test.
+The first offline alert was suppressed because acknowledgement preceded delivery;
+the supplemental run verified publication before acknowledgement and fresh-data recovery.
+The local monitor hit a DNS error; the bounded backend completed its run,
 and verification continued from its recorded state without restarting that load.
-New-run email delivery was not manually confirmed; notification publication and
-incident state were verified. Queues and all five DLQs drained. The deployed React
+New-run email delivery was not manually confirmed; staff, manager and offline SNS
+publication and incident state were verified. All three workflows were idle, and
+queues and all five DLQs drained. The deployed React
 app passed read-only browser checks for all five views, charts, mobile, CSP,
 authentication and disconnect. Physical sensor hardware remains untested.
 
