@@ -128,7 +128,7 @@ export function DeviceEditor({
         />
       </label>
       <label>
-        Site ID
+        Site
         <input
           value={settings.site_id}
           pattern="[A-Za-z0-9_-]{1,80}"
@@ -191,7 +191,7 @@ export function DeviceEditor({
           }
         >
           <option value="simulation">Simulated sensor</option>
-          <option value="physical">Physical sensor / gateway</option>
+          <option value="physical">Physical sensor</option>
         </select>
       </label>
       <label>
@@ -218,9 +218,8 @@ export function DeviceEditor({
         Device enabled
       </label>
       <p className="muted small span-two">
-        Changing a rule resets its breach count. Stop sessions and recover open
-        temperature incidents before editing. These thresholds are project
-        settings.
+        End active sessions and resolve open temperature incidents before
+        editing. Changing a limit restarts breach detection.
       </p>
       <button className="button primary span-two" disabled={busy}>
         Save device settings <Check size={16} />

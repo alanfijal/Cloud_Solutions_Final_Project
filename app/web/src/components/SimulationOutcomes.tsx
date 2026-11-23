@@ -77,11 +77,6 @@ export function SimulationOutcomes({
           );
         })}
       </div>
-      <p className="small muted">
-        Based on retained incidents recorded during this session. Email delivery
-        itself is not verified here. A stopped run may end before its expected
-        outcome.
-      </p>
     </Panel>
   );
 }

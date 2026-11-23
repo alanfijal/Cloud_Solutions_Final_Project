@@ -165,38 +165,10 @@ nav {
   padding: 2px 6px;
   border-radius: 4px;
 }
-.nav-new {
-  font-size: 8px;
-  font-weight: 700;
-  letter-spacing: 0.5px;
-  padding: 3px 5px;
-  border-radius: 3px;
-  background: #d4e1b5;
-  color: #23493d;
-  margin-left: auto;
-}
 .sidebar-bottom {
   margin-top: auto;
-}
-.workspace-status {
   border-top: 1px solid #ffffff1a;
-  border-bottom: 1px solid #ffffff1a;
-  padding: 20px 9px;
-  display: flex;
-  align-items: center;
-  gap: 11px;
-  margin-bottom: 12px;
-}
-.workspace-status strong {
-  display: block;
-  font-size: 11px;
-  font-weight: 500;
-}
-.workspace-status small {
-  display: block;
-  font-size: 10px;
-  color: #91ad9c;
-  margin-top: 5px;
+  padding-top: 12px;
 }
 .main {
   margin-left: 224px;
@@ -832,25 +804,6 @@ td small {
 tbody tr:last-child td {
   border-bottom: 0;
 }
-.connection-guide {
-  display: flex;
-  align-items: flex-start;
-  gap: 20px;
-  background: #f0f4e9;
-}
-.connection-guide > .device-icon {
-  width: 48px;
-  height: 48px;
-  flex-shrink: 0;
-}
-.connection-guide p {
-  font-size: 12px;
-  margin-top: 10px;
-  max-width: 740px;
-}
-.connection-guide p.small {
-  font-size: 10px;
-}
 .lab-layout {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 315px;
@@ -926,24 +879,6 @@ tbody tr:last-child td {
   background: #6a8b58;
   border-color: #6a8b58;
   color: white;
-}
-.expectation {
-  display: flex;
-  align-items: flex-start;
-  gap: 12px;
-  background: #f1f5eb;
-}
-.expectation > svg {
-  flex-shrink: 0;
-  color: #789565;
-}
-.expectation strong {
-  font-size: 11px;
-}
-.expectation p {
-  font-size: 10px;
-  color: #7b8a6f;
-  margin-top: 5px;
 }
 .session-panel h2 {
   margin-bottom: 22px;
@@ -1259,28 +1194,6 @@ progress::-moz-progress-bar {
 .manual-reading input {
   max-width: 170px;
 }
-.onboarding h3 {
-  margin-bottom: 20px;
-}
-.onboarding li {
-  line-height: 1.8;
-  font-size: 12px;
-  color: #7b8a6f;
-  margin: 13px 0;
-}
-.onboarding pre {
-  font-size: 11px;
-  background: #f2f5ec;
-  border-radius: 7px;
-  padding: 20px;
-  overflow: auto;
-  line-height: 1.7;
-  color: #5b7650;
-}
-.onboarding code {
-  font-size: 11px;
-  overflow-wrap: anywhere;
-}
 .incident-detail-meta {
   display: flex;
   gap: 8px;
@@ -1395,10 +1308,6 @@ progress::-moz-progress-bar {
 }
 .login-story .eyebrow {
   color: #a1ba8a;
-}
-.login-story small {
-  font-size: 10px;
-  color: #8ba894;
 }
 .login-points {
   display: flex;
@@ -1714,12 +1623,6 @@ progress::-moz-progress-bar {
   .incident-row > svg {
     display: none;
   }
-  .connection-guide {
-    flex-direction: column;
-  }
-  .connection-guide h2 {
-    font-size: 19px;
-  }
   .modal {
     padding: 23px 20px;
   }
@@ -1803,9 +1706,6 @@ progress::-moz-progress-bar {
   .login-points {
     margin-top: 25px;
     gap: 15px;
-  }
-  .login-story > small {
-    display: none;
   }
   .login-form-wrap {
     padding: 40px 28px;

@@ -31,7 +31,6 @@ import {
   Settings2,
   ShieldCheck,
   Snowflake,
-  Unplug,
   Wifi,
   X,
   ChartNoAxesCombined,
@@ -58,7 +57,6 @@ function App() {
     [filter, setFilter] = useState("all"),
     [selectedUnit, setSelectedUnit] = useState<string | null>(null);
   const [editing, setEditing] = useState(false),
-    [onboarding, setOnboarding] = useState(false),
     [selectedIncident, setSelectedIncident] = useState<string | null>(null);
   const [now, setNow] = useState(Date.now() / 1000),
     [polling, setPolling] = useState(false);
@@ -193,7 +191,6 @@ function App() {
               </span>
             </div>
           </div>
-          <small>ESADE · Cloud Solutions Project</small>
         </section>
         <section className="login-form-wrap">
           <form onSubmit={login} className="login-form">
@@ -222,11 +219,6 @@ function App() {
               {busy ? "Connecting…" : "Open workspace"}
               <ArrowRight size={17} />
             </button>
-            <p className="small muted">
-              <ShieldCheck size={14} />
-              Your key stays in this tab’s memory. Shared operator access is
-              used for this university MVP.
-            </p>
           </form>
         </section>
       </main>
@@ -276,18 +268,10 @@ function App() {
               {id === "incidents" && !!openIncidents.length && (
                 <b>{openIncidents.length}</b>
               )}
-              {id === "simulation" && <span className="nav-new">LAB</span>}
             </button>
           ))}
         </nav>
         <div className="sidebar-bottom">
-          <div className="workspace-status">
-            <span className="status-dot online" />
-            <div>
-              <strong>ESADE workspace</strong>
-              <small>Stockholm · one environment</small>
-            </div>
-          </div>
           <button className="nav-link" onClick={logout}>
             <LogOut size={17} />
             Disconnect
@@ -337,7 +321,7 @@ function App() {
                 {view === "overview"
                   ? "Keep an eye on every degree, across your entire workspace."
                   : view === "devices"
-                    ? "Configure your fleet and prepare physical sensors for connection."
+                    ? "Manage your devices and temperature limits."
                     : view === "incidents"
                       ? "Understand what happened, coordinate a response and follow recovery."
                       : view === "analytics"
@@ -426,10 +410,7 @@ function App() {
                     <Cpu size={16} />
                     Configured devices
                   </span>
-                  <strong className="stat-value">
-                    {units.length}
-                    <span> / 5 slots</span>
-                  </strong>
+                  <strong className="stat-value">{units.length}</strong>
                   <small>
                     {new Set(units.map((u) => u.site_id)).size} sites in view
                   </small>
@@ -443,7 +424,7 @@ function App() {
                     {online}
                     <span> devices</span>
                   </strong>
-                  <small>Based on expected reporting intervals</small>
+                  <small>Reporting on time</small>
                 </Panel>
                 <Panel>
                   <span className="stat-label">
@@ -462,13 +443,13 @@ function App() {
                 </Panel>
                 <Panel>
                   <span className="stat-label">
-                    <FlaskConical size={16} />
+                    <Radio size={16} />
                     Physical devices
                   </span>
                   <strong className="stat-value">
                     {units.filter((u) => u.source === "physical").length}
                   </strong>
-                  <small>Simulation sources remain clearly labelled</small>
+                  <small>Configured for sensor readings</small>
                 </Panel>
               </div>
               <div className="section-heading">
@@ -589,7 +570,7 @@ function App() {
                 <div className="panel-heading">
                   <div>
                     <span className="eyebrow">FLEET REGISTRY</span>
-                    <h2>Five secure device slots. Your configuration.</h2>
+                    <h2>Your devices</h2>
                   </div>
                   <Badge>{units.length} in view</Badge>
                 </div>
@@ -659,26 +640,6 @@ function App() {
                   </table>
                 </div>
               </Panel>
-              <Panel className="connection-guide">
-                <span className="device-icon">
-                  <Unplug size={24} />
-                </span>
-                <div>
-                  <span className="eyebrow">BRING YOUR OWN SENSOR</span>
-                  <h2>Ready for a physical connection.</h2>
-                  <p>
-                    Select a device slot, switch its source to Physical, and use
-                    its dedicated credential from secure provisioning. A sensor
-                    or gateway sends the same HTTPS payload as the simulator.
-                  </p>
-                  <p className="small muted">
-                    The MVP includes a Python gateway client with a bounded
-                    persistent outbox. Hardware drivers and calibration depend
-                    on your sensor and have not been tested with physical
-                    equipment.
-                  </p>
-                </div>
-              </Panel>
             </>
           )}
           {view === "incidents" && (
@@ -696,10 +657,7 @@ function App() {
                 select={(i) => setSelectedIncident(i.incident_id)}
               />
               <p className="panel-footnote">
-                Latest five incidents per unit. Acknowledgement records a
-                response; fresh in-range readings recover temperature incidents.
-                Ending a monitoring session closes offline incidents without
-                claiming recovery.
+                Showing up to five recent incidents per device.
               </p>
             </Panel>
           )}
@@ -709,13 +667,7 @@ function App() {
               session={session}
               now={now}
               busy={busy}
-              run={(body) =>
-                mutate(
-                  "sessions/start",
-                  body,
-                  "Session started. The backend will enforce its duration and reading limits.",
-                )
-              }
+              run={(body) => mutate("sessions/start", body, "Session started.")}
               stop={() =>
                 safely(
                   mutate(
@@ -744,7 +696,7 @@ function App() {
           <footer>
             <span>
               <Snowflake size={14} />
-              Coldchain Monitor · ESADE
+              Coldchain Monitor
             </span>
             <span>
               {polling ? (
@@ -766,7 +718,6 @@ function App() {
           wide
           close={() => {
             setSelectedUnit(null);
-            setOnboarding(false);
           }}
         >
           {error && (
@@ -784,7 +735,6 @@ function App() {
                 className={!editing ? "active" : ""}
                 onClick={() => {
                   setEditing(false);
-                  setOnboarding(false);
                 }}
               >
                 Live view
@@ -793,68 +743,18 @@ function App() {
                 className={editing ? "active" : ""}
                 onClick={() => {
                   setEditing(true);
-                  setOnboarding(false);
                 }}
               >
                 Settings
               </button>
-              <button onClick={() => setOnboarding(!onboarding)}>
-                Connect a sensor
-              </button>
             </div>
           </div>
-          {onboarding ? (
-            <div className="onboarding">
-              <h3>Connect this device over HTTPS</h3>
-              <ol>
-                <li>Set this device’s data source to Physical in Settings.</li>
-                <li>
-                  Obtain its dedicated credential through the secure local
-                  provisioning command in README.
-                </li>
-                <li>
-                  Configure your gateway to POST to{" "}
-                  <code>
-                    {data.device_endpoint || "the deployed API URL"}/readings
-                  </code>{" "}
-                  with <code>Authorization: Bearer &lt;device-key&gt;</code>.
-                </li>
-                <li>
-                  Start a bounded physical monitoring session from the
-                  Simulation lab.
-                </li>
-              </ol>
-              <pre>
-                {JSON.stringify(
-                  {
-                    schema_version: 1,
-                    reading_id: "persist-on-device-before-sending",
-                    unit_id: unit.unit_id,
-                    site_id: unit.site_id,
-                    observed_at: "UTC ISO-8601 ending in Z",
-                    temperature: 4.2,
-                  },
-                  null,
-                  2,
-                )}
-              </pre>
-              <p className="muted small">
-                Reuse the reading ID on retries. Each device has its own
-                credential. Device keys are never returned to this browser.
-              </p>
-            </div>
-          ) : editing ? (
+          {editing ? (
             <DeviceEditor
               key={`${unit.unit_id}-${unit.revision}`}
               unit={unit}
               busy={busy}
-              save={(body) =>
-                mutate(
-                  "devices",
-                  body,
-                  "Device settings saved. The breach sequence has been reset.",
-                )
-              }
+              save={(body) => mutate("devices", body, "Device settings saved.")}
             />
           ) : (
             <>
@@ -881,7 +781,7 @@ function App() {
               <TemperatureChart unit={unit} large />
               <div className="chart-caption">
                 <span>
-                  Last {unit.history.length} accepted readings ·{" "}
+                  Last {unit.history.length} readings ·{" "}
                   {unit.direction === "max" ? "≤" : "≥"} {unit.threshold}°C
                 </span>
                 <button
@@ -907,7 +807,7 @@ function App() {
                 <span>
                   Offline alerts
                   <strong>
-                    {unit.monitoring ? "Monitoring active" : "Not armed"}
+                    {unit.monitoring ? "Monitoring active" : "Inactive"}
                   </strong>
                 </span>
               </div>
@@ -928,7 +828,7 @@ function App() {
                           observed_at: new Date().toISOString(),
                           temperature: Number(form.get("temperature")),
                         },
-                        "Reading accepted. Processing is asynchronous; the next refresh will show its result.",
+                        "Reading accepted.",
                       ),
                     );
                   }}

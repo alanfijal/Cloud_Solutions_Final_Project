@@ -248,10 +248,6 @@ export function IncidentDetail({
               Save activity
             </button>
           </form>
-          <p className="small muted">
-            Shared operator access: names are entered by the operator and are
-            not verified identities. Avoid personal or sensitive information.
-          </p>
         </div>
       </div>
     </Modal>

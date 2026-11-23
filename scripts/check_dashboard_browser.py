@@ -262,9 +262,6 @@ def main():
                 page.get_by_label("Data source").select_option("physical")
                 page.get_by_role("button", name="Save device settings").click()
                 expect(page.locator("dialog h2")).to_contain_text("Prep fridge")
-                page.get_by_role("button", name="Connect a sensor").click()
-                expect(page.locator("dialog pre")).to_contain_text('"unit_id": "unit-2"')
-                expect(page.locator("dialog")).to_contain_text("Device keys are never returned")
                 page.get_by_role("button", name="Close detail").click()
                 page.get_by_role("navigation").get_by_role("button", name="Simulation lab").click()
                 expect(page.locator(".scenario-card")).to_have_count(6)
@@ -278,7 +275,7 @@ def main():
                 page.get_by_role("navigation").get_by_role("button", name="Analytics").click()
                 page.get_by_role("button", name="Generate report", exact=True).click()
                 expect(page.locator("table")).to_contain_text("Fridge 01")
-                expect(page.locator(".report-meta")).to_contain_text("125.0 KiB scanned")
+                expect(page.locator(".report-meta")).to_contain_text("Succeeded")
                 with page.expect_download() as download:
                     page.get_by_role("button", name="Export CSV", exact=True).click()
                 assert download.value.suggested_filename == "coldchain-report.csv"
@@ -307,7 +304,6 @@ def main():
                         "visible modal conflict",
                         "incident notes and assignment",
                         "versioned device configuration",
-                        "physical onboarding guidance",
                         "six simulation scenarios",
                         "backend session start and stop",
                         "on-demand report and CSV",

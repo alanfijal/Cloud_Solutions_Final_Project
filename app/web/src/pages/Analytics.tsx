@@ -1,9 +1,5 @@
 import { useState } from "react";
-import {
-  ChartNoAxesCombined,
-  ArrowDownToLine,
-  ShieldCheck,
-} from "lucide-react";
+import { ChartNoAxesCombined, ArrowDownToLine } from "lucide-react";
 import type { Unit, Report } from "../types";
 import { Panel, Badge, Empty } from "../components/common";
 import { csv } from "../api";
@@ -106,11 +102,6 @@ export function Analytics({
           <span>
             {date(report.start)} → {date(report.end)}
           </span>
-          <span className="push">
-            {report.bytes_scanned !== undefined
-              ? `${(report.bytes_scanned / 1024).toFixed(1)} KiB scanned`
-              : "A bounded query is running in the background"}
-          </span>
         </div>
       )}
       {report?.error && <div className="notice warning">{report.error}</div>}
@@ -118,9 +109,9 @@ export function Analytics({
         <>
           <div className="stats-grid three">
             <Panel>
-              <span className="stat-label">Accepted readings in lake</span>
+              <span className="stat-label">Recorded readings</span>
               <strong className="stat-value">{total.toLocaleString()}</strong>
-              <small>Deduplicated by stable event identity</small>
+              <small>In the selected period</small>
             </Panel>
             <Panel>
               <span className="stat-label">Incidents opened</span>
@@ -201,20 +192,15 @@ export function Analytics({
             </div>
             {!rows.length && (
               <Empty>
-                No lake events in this window. Run a scenario, then generate a
-                fresh report after delivery.
+                No readings for this period. Choose another time window or
+                collect more readings.
               </Empty>
             )}
           </Panel>
-          <div className="notice">
-            <ShieldCheck size={18} />
-            <span>
-              Durations estimate conditions between consecutive samples. Long
-              gaps, window edges and legacy readings without rule metadata
-              remain unknown. This is an operational report, not a regulatory
-              certificate. Identical reports are reused for five minutes.
-            </span>
-          </div>
+          <p className="panel-footnote">
+            Durations are estimates between readings. Gaps without enough data
+            appear as unknown.
+          </p>
         </>
       ) : (
         !report && (

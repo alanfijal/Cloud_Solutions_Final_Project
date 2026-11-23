@@ -3,7 +3,6 @@ import { useState } from "react";
 import {
   Check,
   CheckCircle2,
-  ShieldCheck,
   Radio,
   Pause,
   Play,
@@ -11,7 +10,7 @@ import {
   Activity,
 } from "lucide-react";
 import type { Unit, Session } from "../types";
-import { Panel, Badge } from "../components/common";
+import { Panel } from "../components/common";
 import { SCENARIOS } from "../scenarios";
 import { live, duration, title } from "../utils";
 export function Simulation({
@@ -63,7 +62,6 @@ export function Simulation({
             <span className="eyebrow">REHEARSE THE REAL WORLD</span>
             <h2>What happens if…</h2>
           </div>
-          <Badge tone="green">Live processing pipeline</Badge>
         </div>
         <p className="muted">
           Create a controlled failure. Watch the same detection, alerts and
@@ -88,17 +86,10 @@ export function Simulation({
             </button>
           ))}
         </div>
-        <Panel className="expectation">
-          <ShieldCheck size={22} />
-          <div>
-            <strong>Repeatable scenarios. Real alerts.</strong>
-            <p>
-              Only the first selected unit receives the failure scenario; the
-              others provide a normal baseline. Temperature curves are a
-              deterministic approximation. Email alerts are real.
-            </p>
-          </div>
-        </Panel>
+        <p className="panel-footnote">
+          The first selected device receives the fault; others stay normal.
+          Simulations send real email alerts.
+        </p>
       </div>
       <Panel className="session-panel">
         <span className="eyebrow">SESSION CONTROLS</span>
@@ -120,16 +111,23 @@ export function Simulation({
             <progress value={session.processed_steps} max={session.max_steps} />
             <div className="progress-label">
               <span>
-                {session.processed_steps} / {session.max_steps} steps
+                {Math.round(
+                  (session.processed_steps / session.max_steps) * 100,
+                )}
+                % complete
               </span>
-              <strong>{session.submitted} sent</strong>
+              <strong>
+                {session.mode === "simulation"
+                  ? `${session.submitted} readings`
+                  : "Monitoring"}
+              </strong>
             </div>
             <div className="session-counts">
               <span>
-                <strong>{session.skipped}</strong> intentionally skipped
+                <strong>{session.skipped}</strong> readings skipped
               </span>
               <span>
-                <strong>{session.interval_s}s</strong> per-unit interval
+                <strong>{session.interval_s}s</strong> reading interval
               </span>
             </div>
             <button
@@ -141,8 +139,8 @@ export function Simulation({
               {session.status === "stopping" ? "Stopping…" : "Stop session"}
             </button>
             <p className="small muted">
-              Stopping disables offline monitoring immediately. One request
-              already in flight can still complete.
+              Monitoring stops immediately. A reading already being sent may
+              still arrive.
             </p>
           </>
         ) : (
@@ -220,7 +218,7 @@ export function Simulation({
                   onChange={(e) => setIntervalValue(Number(e.target.value))}
                 >
                   <option value={30}>Standard · 30 seconds per unit</option>
-                  <option value={10}>Faster demo · 10 seconds per unit</option>
+                  <option value={10}>Fast · 10 seconds per unit</option>
                 </select>
               </label>
             )}
@@ -241,9 +239,8 @@ export function Simulation({
               {mode === "simulation" ? "Start simulation" : "Start monitoring"}
             </button>
             <p className="small muted">
-              Runs on the backend, including when this tab closes. The deadline
-              and request limit stop each session automatically. One session at
-              a time.
+              Sessions continue if you close this tab and end automatically. One
+              session can run at a time.
             </p>
           </form>
         )}

@@ -40,7 +40,7 @@ export const SCENARIOS = [
   [
     "normal",
     "Normal operation",
-    "A stable baseline with small, deterministic temperature variations.",
+    "Stable temperatures with small variations.",
     ShieldCheck,
   ],
 ] as const;
